@@ -129,15 +129,10 @@ with st.sidebar:
     # Enhanced stats
     display_chat_stats()
     
-    st.markdown("---")
-    
-    # Quick actions
-    st.markdown("---")
     
     # Advanced settings
     st.session_state.settings = create_advanced_settings()
     
-    st.markdown("---")
     
     # Export functionality
     export_chat_history()
