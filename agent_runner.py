@@ -11,6 +11,7 @@ from langchain_aws.embeddings import BedrockEmbeddings
 from langchain_anthropic import ChatAnthropic
 from pinecone import Pinecone
 import logging
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -164,8 +165,6 @@ def format_sources(sources: list) -> str:
     
     for i, source in enumerate(sources, 1):
         citations += f"**{i}.** {source['title']}\n"
-        citations += f"   - **Authors:** {source['authors']}\n"
-        citations += f"   - **Date:** {source['date']}\n"
         citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
         if source.get('url'):
             citations += f"   - **Link:** [View Paper]({source['url']})\n"
@@ -321,13 +320,82 @@ except Exception as e:
     logger.error(f"Failed to initialize agent: {e}")
     raise
 
-# Global chat history and cache
-chat_history = ""
+# Global chat history and cache with better memory management
+chat_history = []
 response_cache = {}
+MAX_HISTORY_EXCHANGES = 6  # 3 exchanges (6 messages: 3 human + 3 assistant)
+MAX_CACHE_SIZE = 100
+CACHE_CLEANUP_SIZE = 20
+
+# Query enhancement and classification system
+QUERY_ENHANCEMENTS = {
+    "general": "Focus on recent research papers and academic sources.",
+    "comparative": "Provide detailed comparisons with specific examples from research papers.",
+    "trend": "Emphasize temporal trends and evolution of the field with recent developments.",
+    "technical": "Include mathematical details, implementation specifics, and technical analysis.",
+    "review": "Provide comprehensive literature review with key findings and research gaps.",
+    "implementation": "Focus on practical implementation details and code considerations."
+}
+
+def classify_query_type(query: str) -> str:
+    """
+    Classify query type for optimal prompt selection.
+    
+    Args:
+        query (str): The user's question
+        
+    Returns:
+        str: Query type classification
+    """
+    query_lower = query.lower()
+    
+    # Check for comparative queries
+    if any(word in query_lower for word in ["compare", "difference", "vs", "versus", "versus", "contrast", "similarity"]):
+        return "comparative"
+    
+    # Check for trend queries
+    elif any(word in query_lower for word in ["trend", "evolution", "development", "latest", "recent", "emerging", "future"]):
+        return "trend"
+    
+    # Check for technical queries
+    elif any(word in query_lower for word in ["how", "implement", "technique", "algorithm", "method", "approach", "architecture"]):
+        return "technical"
+    
+    # Check for review queries
+    elif any(word in query_lower for word in ["review", "summary", "overview", "survey", "literature"]):
+        return "review"
+    
+    # Check for implementation queries
+    elif any(word in query_lower for word in ["code", "implementation", "practical", "example", "tutorial"]):
+        return "implementation"
+    
+    # Default to general
+    else:
+        return "general"
+
+def enhance_query(query: str, query_type: str | None = None) -> str:
+    """
+    Enhance user queries with research-specific context.
+    
+    Args:
+        query (str): The original user query
+        query_type (str | None): The classified query type (auto-detected if None)
+        
+    Returns:
+        str: Enhanced query with research context
+    """
+    if query_type is None:
+        query_type = classify_query_type(query)
+    
+    enhancement = QUERY_ENHANCEMENTS.get(query_type, QUERY_ENHANCEMENTS["general"])
+    enhanced_query = f"{query} {enhancement}"
+    
+    logger.info(f"Query enhanced: '{query}' -> Type: {query_type}")
+    return enhanced_query
 
 def chat(query: str) -> str:
     """
-    Enhanced chat function with caching, better memory management, and source citations.
+    Enhanced chat function with cost-efficient memory management, follow-up question handling, and query enhancement.
     
     Args:
         query (str): The user's question
@@ -346,16 +414,28 @@ def chat(query: str) -> str:
             logger.info("Returning cached response")
             return response_cache[cache_key]
         
+        # Enhance the query for better results
+        query_type = classify_query_type(query)
+        enhanced_query = enhance_query(query, query_type)
+        
         # Add a small delay to prevent rate limiting
         time.sleep(1)
         
-        # Extract context from recent conversation (last 3 exchanges)
-        context_lines = chat_history.split('\n')[-6:]  # Last 6 lines (3 exchanges)
-        recent_context = ' '.join(context_lines)
+        # Extract context from recent conversation (last 3 exchanges for cost efficiency)
+        recent_exchanges = chat_history[-3:] if len(chat_history) >= 3 else chat_history
+        recent_context = ""
         
-        # Execute the agent with context
+        if recent_exchanges:
+            # Format recent context more efficiently
+            context_parts = []
+            for exchange in recent_exchanges:
+                context_parts.append(f"Human: {exchange['human']}")
+                context_parts.append(f"Assistant: {exchange['assistant']}")
+            recent_context = " ".join(context_parts)
+        
+        # Execute the agent with enhanced query and context
         out = agent_executor.invoke({
-            "input": query,
+            "input": enhanced_query,
             "chat_history": recent_context
         })
         
@@ -384,20 +464,27 @@ def chat(query: str) -> str:
         # Cache the response
         response_cache[cache_key] = full_response
         
-        # Limit cache size to prevent memory issues
-        if len(response_cache) > 100:
-            # Remove oldest entries
-            oldest_keys = list(response_cache.keys())[:20]
+        # Improved cache management
+        if len(response_cache) > MAX_CACHE_SIZE:
+            # Remove oldest entries more efficiently
+            oldest_keys = list(response_cache.keys())[:CACHE_CLEANUP_SIZE]
             for key in oldest_keys:
                 del response_cache[key]
         
-        # Update chat history (keep last 10 exchanges to prevent it from growing too large)
-        chat_history += f"\nHuman: {query}\nAssistant: {answer}"  # Store without sources in history
-        history_lines = chat_history.split('\n')
-        if len(history_lines) > 20:  # Keep only last 10 exchanges
-            chat_history = '\n'.join(history_lines[-20:])
+        # Update chat history with structured data (more memory efficient)
+        exchange = {
+            "human": query,
+            "assistant": answer,  # Store without sources in history
+            "timestamp": datetime.now(),
+            "query_type": query_type  # Store query type for analysis
+        }
+        chat_history.append(exchange)
         
-        logger.info("Query processed successfully")
+        # Limit history size to 3 exchanges for cost efficiency
+        if len(chat_history) > MAX_HISTORY_EXCHANGES:
+            chat_history = chat_history[-MAX_HISTORY_EXCHANGES:]
+        
+        logger.info(f"Query processed successfully. Type: {query_type}, History size: {len(chat_history)}, Cache size: {len(response_cache)}")
         return full_response
         
     except Exception as e:
@@ -411,13 +498,50 @@ def clear_cache():
     response_cache.clear()
     logger.info("Response cache cleared")
 
+def clear_history():
+    """Clear the chat history."""
+    global chat_history
+    chat_history.clear()
+    logger.info("Chat history cleared")
+
 def get_chat_stats():
     """Get statistics about the chat session."""
     global chat_history, response_cache
     return {
         "cache_size": len(response_cache),
-        "history_length": len(chat_history.split('\n')),
-        "exchanges": len([line for line in chat_history.split('\n') if line.startswith('Human:')])
+        "history_exchanges": len(chat_history),
+        "memory_usage_mb": estimate_memory_usage(),
+        "avg_exchange_length": calculate_avg_exchange_length()
     }
+
+def estimate_memory_usage():
+    """Estimate memory usage in MB."""
+    import sys
+    
+    # Estimate memory for chat history
+    history_memory = sum(
+        sys.getsizeof(exchange["human"]) + sys.getsizeof(exchange["assistant"])
+        for exchange in chat_history
+    )
+    
+    # Estimate memory for cache
+    cache_memory = sum(
+        sys.getsizeof(key) + sys.getsizeof(value)
+        for key, value in response_cache.items()
+    )
+    
+    total_memory = history_memory + cache_memory
+    return round(total_memory / (1024 * 1024), 2)  # Convert to MB
+
+def calculate_avg_exchange_length():
+    """Calculate average length of exchanges."""
+    if not chat_history:
+        return 0
+    
+    total_length = sum(
+        len(exchange["human"]) + len(exchange["assistant"])
+        for exchange in chat_history
+    )
+    return round(total_length / len(chat_history), 0)
 
 # In[ ]:
