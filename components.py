@@ -203,19 +203,6 @@ def create_welcome_section():
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
-    st.markdown("""
-    <div style='background: #f8f9fa; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;'>
-        <h3>🎯 What can I help you with?</h3>
-        <ul>
-            <li><strong>Literature Reviews:</strong> Get comprehensive summaries of research areas</li>
-            <li><strong>Technical Explanations:</strong> Understand complex AI/ML concepts</li>
-            <li><strong>Research Trends:</strong> Discover the latest developments in your field</li>
-            <li><strong>Paper Analysis:</strong> Get insights from specific research papers</li>
-            <li><strong>Method Comparisons:</strong> Compare different approaches and techniques</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
 
 def create_analytics_dashboard():
     """Create an analytics dashboard for research insights."""
