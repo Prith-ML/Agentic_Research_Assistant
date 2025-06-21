@@ -66,7 +66,7 @@ except Exception as e:
     logger.error(f"Failed to initialize Pinecone: {e}")
     raise
 
-def arxiv_search(query: str) -> str:
+def arxiv_search(query: str) -> dict:
     """
     Enhanced search through arXiv papers using vector similarity.
     
@@ -74,7 +74,7 @@ def arxiv_search(query: str) -> str:
         query (str): The search query
         
     Returns:
-        str: Relevant paper excerpts joined with separators
+        dict: Dictionary containing search results and source information
     """
     try:
         logger.info(f"Searching for: {query}")
@@ -89,32 +89,92 @@ def arxiv_search(query: str) -> str:
         )
         
         if not out["matches"]:
-            return "No relevant papers found for this query."
+            return {
+                "content": "No relevant papers found for this query.",
+                "sources": [],
+                "paper_count": 0
+            }
         
-        # Enhanced result processing with ranking
+        # Enhanced result processing with ranking and source tracking
         results = []
+        sources = []
+        
         for match in out["matches"]:
             if "metadata" in match and "text" in match["metadata"]:
                 score = match.get("score", 0)
                 title = match["metadata"].get("title", "Unknown Title")
                 authors = match["metadata"].get("authors", "Unknown Authors")
                 date = match["metadata"].get("date", "Unknown Date")
+                paper_id = match["metadata"].get("paper_id", "Unknown ID")
+                url = match["metadata"].get("url", "")
                 
                 # Only include high-quality matches
                 if score > 0.7:  # Threshold for relevance
                     result_text = f"[Score: {score:.2f}] {title} by {authors} ({date})\n{match['metadata']['text']}"
                     results.append(result_text)
+                    
+                    # Add source information
+                    source_info = {
+                        "title": title,
+                        "authors": authors,
+                        "date": date,
+                        "paper_id": paper_id,
+                        "url": url,
+                        "relevance_score": score,
+                        "excerpt": match["metadata"]["text"][:200] + "..." if len(match["metadata"]["text"]) > 200 else match["metadata"]["text"]
+                    }
+                    sources.append(source_info)
         
         if not results:
-            return "Found papers but none met the relevance threshold. Try rephrasing your question."
+            return {
+                "content": "Found papers but none met the relevance threshold. Try rephrasing your question.",
+                "sources": [],
+                "paper_count": 0
+            }
         
-        return "\n---\n".join(results[:5])  # Return top 5 most relevant
+        return {
+            "content": "\n---\n".join(results[:5]),  # Return top 5 most relevant
+            "sources": sources[:5],  # Top 5 sources
+            "paper_count": len(sources)
+        }
         
     except Exception as e:
         logger.error(f"Error in arxiv_search: {e}")
-        return f"Error searching papers: {str(e)}"
+        return {
+            "content": f"Error searching papers: {str(e)}",
+            "sources": [],
+            "paper_count": 0
+        }
 
-def semantic_search(query: str, context: str = "") -> str:
+def format_sources(sources: list) -> str:
+    """
+    Format sources into a nice citation format.
+    
+    Args:
+        sources (list): List of source dictionaries
+        
+    Returns:
+        str: Formatted citations
+    """
+    if not sources:
+        return ""
+    
+    citations = "\n\n## 📚 Sources & References\n\n"
+    citations += f"*Based on analysis of {len(sources)} research papers:*\n\n"
+    
+    for i, source in enumerate(sources, 1):
+        citations += f"**{i}.** {source['title']}\n"
+        citations += f"   - **Authors:** {source['authors']}\n"
+        citations += f"   - **Date:** {source['date']}\n"
+        citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
+        if source.get('url'):
+            citations += f"   - **Link:** [View Paper]({source['url']})\n"
+        citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
+    
+    citations += "---\n*These sources were retrieved using semantic search through arXiv papers.*"
+    return citations
+
+def semantic_search(query: str, context: str = "") -> dict:
     """
     Semantic search that considers conversation context.
     """
@@ -128,16 +188,16 @@ def summarize_papers(query: str) -> str:
     """
     try:
         # Get papers first
-        papers = arxiv_search(query)
-        if "No relevant papers found" in papers:
-            return papers
+        search_result = arxiv_search(query)
+        if search_result["paper_count"] == 0:
+            return search_result["content"]
         
         # Ask the LLM to summarize
         summary_prompt = f"""
         Based on the following research papers, provide a comprehensive summary of the current state of research on: {query}
         
         Papers:
-        {papers}
+        {search_result["content"]}
         
         Please provide:
         1. Key findings and trends
@@ -147,7 +207,11 @@ def summarize_papers(query: str) -> str:
         """
         
         response = llm.invoke(summary_prompt)
-        return str(response.content)
+        summary = str(response.content)
+        
+        # Add sources to the summary
+        sources_section = format_sources(search_result["sources"])
+        return summary + sources_section
         
     except Exception as e:
         logger.error(f"Error in summarize_papers: {e}")
@@ -160,16 +224,16 @@ def analyze_trends(topic: str) -> str:
     try:
         # Search for recent papers
         recent_query = f"latest developments {topic} 2024 2023"
-        papers = arxiv_search(recent_query)
+        search_result = arxiv_search(recent_query)
         
-        if "No relevant papers found" in papers:
+        if search_result["paper_count"] == 0:
             return f"No recent papers found for {topic}"
         
         # Analyze trends
         trend_prompt = f"""
         Analyze the following recent papers to identify trends in {topic}:
         
-        {papers}
+        {search_result["content"]}
         
         Please identify:
         1. Emerging trends and patterns
@@ -180,7 +244,11 @@ def analyze_trends(topic: str) -> str:
         """
         
         response = llm.invoke(trend_prompt)
-        return str(response.content)
+        analysis = str(response.content)
+        
+        # Add sources to the analysis
+        sources_section = format_sources(search_result["sources"])
+        return analysis + sources_section
         
     except Exception as e:
         logger.error(f"Error in analyze_trends: {e}")
@@ -189,7 +257,7 @@ def analyze_trends(topic: str) -> str:
 # Register enhanced tools for the agent
 tools = [
     Tool.from_function(
-        func=arxiv_search,
+        func=lambda query: arxiv_search(query)["content"],  # Extract content for tool
         name="arxiv_search",
         description="Use this tool to answer questions about AI, ML, or arXiv papers. "
                    "This tool searches through a curated dataset of scientific papers "
@@ -259,13 +327,13 @@ response_cache = {}
 
 def chat(query: str) -> str:
     """
-    Enhanced chat function with caching and better memory management.
+    Enhanced chat function with caching, better memory management, and source citations.
     
     Args:
         query (str): The user's question
         
     Returns:
-        str: The AI assistant's response
+        str: The AI assistant's response with sources
     """
     global chat_history, response_cache
     
@@ -293,8 +361,28 @@ def chat(query: str) -> str:
         
         answer = out.get("output", "I apologize, but I couldn't generate a response for your query.")
         
+        # Try to get sources from the search results
+        sources_section = ""
+        try:
+            # If the agent used arxiv_search, we can extract sources
+            if "intermediate_steps" in out:
+                for step in out["intermediate_steps"]:
+                    if step[0].tool == "arxiv_search":
+                        # Extract sources from the search
+                        search_result = arxiv_search(step[0].tool_input)
+                        if search_result["sources"]:
+                            sources_section = format_sources(search_result["sources"])
+                            break
+        except Exception as e:
+            logger.warning(f"Could not extract sources: {e}")
+        
+        # Combine answer with sources
+        full_response = answer
+        if sources_section:
+            full_response += sources_section
+        
         # Cache the response
-        response_cache[cache_key] = answer
+        response_cache[cache_key] = full_response
         
         # Limit cache size to prevent memory issues
         if len(response_cache) > 100:
@@ -304,13 +392,13 @@ def chat(query: str) -> str:
                 del response_cache[key]
         
         # Update chat history (keep last 10 exchanges to prevent it from growing too large)
-        chat_history += f"\nHuman: {query}\nAssistant: {answer}"
+        chat_history += f"\nHuman: {query}\nAssistant: {answer}"  # Store without sources in history
         history_lines = chat_history.split('\n')
         if len(history_lines) > 20:  # Keep only last 10 exchanges
             chat_history = '\n'.join(history_lines[-20:])
         
         logger.info("Query processed successfully")
-        return answer
+        return full_response
         
     except Exception as e:
         logger.error(f"Error in chat function: {e}")
