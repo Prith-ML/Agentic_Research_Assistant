@@ -6,3 +6,7 @@ pinecone
 boto3
 python-dotenv
 pandas
+numpy
+plotly
+requests
+python-dateutil
