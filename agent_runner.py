@@ -446,20 +446,47 @@ def chat(query: str) -> str:
         try:
             # If the agent used arxiv_search, we can extract sources
             if "intermediate_steps" in out:
+                logger.info(f"Found {len(out['intermediate_steps'])} intermediate steps")
                 for step in out["intermediate_steps"]:
+                    logger.info(f"Step tool: {step[0].tool}")
                     if step[0].tool == "arxiv_search":
+                        logger.info(f"Found arxiv_search step with input: {step[0].tool_input}")
                         # Extract sources from the search
                         search_result = arxiv_search(step[0].tool_input)
                         if search_result["sources"]:
+                            logger.info(f"Found {len(search_result['sources'])} sources")
                             sources_section = format_sources(search_result["sources"])
                             break
+                        else:
+                            logger.warning("No sources found in search result")
+            else:
+                logger.info("No intermediate steps found")
+                
+            # If no sources found from agent steps, try direct search
+            if not sources_section:
+                logger.info("Trying direct search for sources")
+                direct_search = arxiv_search(query)
+                if direct_search["sources"]:
+                    logger.info(f"Direct search found {len(direct_search['sources'])} sources")
+                    sources_section = format_sources(direct_search["sources"])
+                
         except Exception as e:
             logger.warning(f"Could not extract sources: {e}")
+            # Try direct search as fallback
+            try:
+                direct_search = arxiv_search(query)
+                if direct_search["sources"]:
+                    sources_section = format_sources(direct_search["sources"])
+            except Exception as fallback_error:
+                logger.error(f"Fallback search also failed: {fallback_error}")
         
         # Combine answer with sources
         full_response = answer
         if sources_section:
             full_response += sources_section
+            logger.info("Sources added to response")
+        else:
+            logger.warning("No sources found for this query")
         
         # Cache the response
         response_cache[cache_key] = full_response
@@ -544,4 +571,24 @@ def calculate_avg_exchange_length():
     )
     return round(total_length / len(chat_history), 0)
 
-# In[ ]:
+def test_source_extraction():
+    """Test function to verify source extraction is working."""
+    test_query = "What are transformer architectures?"
+    logger.info(f"Testing source extraction with query: {test_query}")
+    
+    # Test direct search
+    search_result = arxiv_search(test_query)
+    logger.info(f"Search result: {search_result['paper_count']} papers found")
+    
+    if search_result["sources"]:
+        logger.info(f"Sources found: {len(search_result['sources'])}")
+        for i, source in enumerate(search_result["sources"][:2]):  # Show first 2
+            logger.info(f"Source {i+1}: {source['title']} (Score: {source['relevance_score']:.2f})")
+        
+        # Test formatting
+        formatted = format_sources(search_result["sources"])
+        logger.info(f"Formatted sources length: {len(formatted)} characters")
+        return True
+    else:
+        logger.error("No sources found in test search")
+        return False
