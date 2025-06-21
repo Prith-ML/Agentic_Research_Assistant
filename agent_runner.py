@@ -68,7 +68,7 @@ except Exception as e:
 
 def arxiv_search(query: str) -> str:
     """
-    Search through arXiv papers using vector similarity.
+    Enhanced search through arXiv papers using vector similarity.
     
     Args:
         query (str): The search query
@@ -79,23 +79,114 @@ def arxiv_search(query: str) -> str:
     try:
         logger.info(f"Searching for: {query}")
         xq = embed.embed_query(query)
-        out = index.query(vector=xq, top_k=5, include_metadata=True)
+        
+        # Enhanced query with better parameters
+        out = index.query(
+            vector=xq, 
+            top_k=8,  # Increased for better coverage
+            include_metadata=True,
+            include_values=False
+        )
         
         if not out["matches"]:
             return "No relevant papers found for this query."
         
+        # Enhanced result processing with ranking
         results = []
         for match in out["matches"]:
             if "metadata" in match and "text" in match["metadata"]:
-                results.append(match["metadata"]["text"])
+                score = match.get("score", 0)
+                title = match["metadata"].get("title", "Unknown Title")
+                authors = match["metadata"].get("authors", "Unknown Authors")
+                date = match["metadata"].get("date", "Unknown Date")
+                
+                # Only include high-quality matches
+                if score > 0.7:  # Threshold for relevance
+                    result_text = f"[Score: {score:.2f}] {title} by {authors} ({date})\n{match['metadata']['text']}"
+                    results.append(result_text)
         
-        return "\n---\n".join(results)
+        if not results:
+            return "Found papers but none met the relevance threshold. Try rephrasing your question."
+        
+        return "\n---\n".join(results[:5])  # Return top 5 most relevant
         
     except Exception as e:
         logger.error(f"Error in arxiv_search: {e}")
         return f"Error searching papers: {str(e)}"
 
-# Register tools for the agent
+def semantic_search(query: str, context: str = "") -> str:
+    """
+    Semantic search that considers conversation context.
+    """
+    # Combine query with context for better search
+    enhanced_query = f"{query} {context}".strip()
+    return arxiv_search(enhanced_query)
+
+def summarize_papers(query: str) -> str:
+    """
+    Get a comprehensive summary of papers related to a topic.
+    """
+    try:
+        # Get papers first
+        papers = arxiv_search(query)
+        if "No relevant papers found" in papers:
+            return papers
+        
+        # Ask the LLM to summarize
+        summary_prompt = f"""
+        Based on the following research papers, provide a comprehensive summary of the current state of research on: {query}
+        
+        Papers:
+        {papers}
+        
+        Please provide:
+        1. Key findings and trends
+        2. Main methodologies used
+        3. Current challenges and limitations
+        4. Future research directions
+        """
+        
+        response = llm.invoke(summary_prompt)
+        return str(response.content)
+        
+    except Exception as e:
+        logger.error(f"Error in summarize_papers: {e}")
+        return f"Error summarizing papers: {str(e)}"
+
+def analyze_trends(topic: str) -> str:
+    """
+    Analyze trends in a specific research area.
+    """
+    try:
+        # Search for recent papers
+        recent_query = f"latest developments {topic} 2024 2023"
+        papers = arxiv_search(recent_query)
+        
+        if "No relevant papers found" in papers:
+            return f"No recent papers found for {topic}"
+        
+        # Analyze trends
+        trend_prompt = f"""
+        Analyze the following recent papers to identify trends in {topic}:
+        
+        {papers}
+        
+        Please identify:
+        1. Emerging trends and patterns
+        2. New methodologies being adopted
+        3. Shifts in research focus
+        4. Key breakthroughs or innovations
+        5. Areas gaining more attention
+        """
+        
+        response = llm.invoke(trend_prompt)
+        return str(response.content)
+        
+    except Exception as e:
+        logger.error(f"Error in analyze_trends: {e}")
+        return f"Error analyzing trends: {str(e)}"
+
+# Register enhanced tools for the agent
 tools = [
     Tool.from_function(
         func=arxiv_search,
@@ -103,6 +194,18 @@ tools = [
         description="Use this tool to answer questions about AI, ML, or arXiv papers. "
                    "This tool searches through a curated dataset of scientific papers "
                    "and returns relevant excerpts to help answer research questions."
+    ),
+    Tool.from_function(
+        func=summarize_papers,
+        name="summarize_papers",
+        description="Use this tool to get comprehensive summaries of research papers on a specific topic. "
+                   "This is useful for literature reviews and understanding the current state of research."
+    ),
+    Tool.from_function(
+        func=analyze_trends,
+        name="analyze_trends",
+        description="Use this tool to analyze trends and patterns in a specific research area. "
+                   "This helps identify emerging directions and shifts in research focus."
     )
 ]
 
@@ -150,12 +253,13 @@ except Exception as e:
     logger.error(f"Failed to initialize agent: {e}")
     raise
 
-# Global chat history
+# Global chat history and cache
 chat_history = ""
+response_cache = {}
 
 def chat(query: str) -> str:
     """
-    Main chat function that processes user queries and returns responses.
+    Enhanced chat function with caching and better memory management.
     
     Args:
         query (str): The user's question
@@ -163,24 +267,47 @@ def chat(query: str) -> str:
     Returns:
         str: The AI assistant's response
     """
-    global chat_history
+    global chat_history, response_cache
     
     try:
         logger.info(f"Processing query: {query}")
         
+        # Check cache for similar queries
+        cache_key = query.lower().strip()
+        if cache_key in response_cache:
+            logger.info("Returning cached response")
+            return response_cache[cache_key]
+        
         # Add a small delay to prevent rate limiting
         time.sleep(1)
         
-        # Execute the agent
+        # Extract context from recent conversation (last 3 exchanges)
+        context_lines = chat_history.split('\n')[-6:]  # Last 6 lines (3 exchanges)
+        recent_context = ' '.join(context_lines)
+        
+        # Execute the agent with context
         out = agent_executor.invoke({
             "input": query,
-            "chat_history": chat_history
+            "chat_history": recent_context
         })
         
         answer = out.get("output", "I apologize, but I couldn't generate a response for your query.")
         
-        # Update chat history
+        # Cache the response
+        response_cache[cache_key] = answer
+        
+        # Limit cache size to prevent memory issues
+        if len(response_cache) > 100:
+            # Remove oldest entries
+            oldest_keys = list(response_cache.keys())[:20]
+            for key in oldest_keys:
+                del response_cache[key]
+        
+        # Update chat history (keep last 10 exchanges to prevent it from growing too large)
         chat_history += f"\nHuman: {query}\nAssistant: {answer}"
+        history_lines = chat_history.split('\n')
+        if len(history_lines) > 20:  # Keep only last 10 exchanges
+            chat_history = '\n'.join(history_lines[-20:])
         
         logger.info("Query processed successfully")
         return answer
@@ -190,5 +317,19 @@ def chat(query: str) -> str:
         error_message = f"I apologize, but I encountered an error while processing your query: {str(e)}"
         return error_message
 
+def clear_cache():
+    """Clear the response cache."""
+    global response_cache
+    response_cache.clear()
+    logger.info("Response cache cleared")
+
+def get_chat_stats():
+    """Get statistics about the chat session."""
+    global chat_history, response_cache
+    return {
+        "cache_size": len(response_cache),
+        "history_length": len(chat_history.split('\n')),
+        "exchanges": len([line for line in chat_history.split('\n') if line.startswith('Human:')])
+    }
 
 # In[ ]:
