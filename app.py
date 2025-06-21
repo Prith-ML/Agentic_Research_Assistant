@@ -1,19 +1,19 @@
 import streamlit as st
-from agent_runner import chat
+from agent_runner import chat, classify_query_type
 import time
 from datetime import datetime
 from components import (
     display_chat_stats, 
-    create_quick_actions, 
     export_chat_history, 
     create_advanced_settings,
     display_message_with_metadata,
     create_feedback_system,
     create_research_tips,
-    create_welcome_section
+    create_welcome_section,
+    display_query_info
 )
 
-# Page configuration
+# Page configuration    
 st.set_page_config(
     page_title="AI Research Assistant",
     page_icon="🔬",
@@ -132,8 +132,6 @@ with st.sidebar:
     st.markdown("---")
     
     # Quick actions
-    quick_action = create_quick_actions()
-    
     st.markdown("---")
     
     # Advanced settings
@@ -198,13 +196,12 @@ else:
 for message in st.session_state.messages:
     display_message_with_metadata(message, st.session_state.settings["show_timestamps"])
 
-# Handle quick actions
-if quick_action:
-    st.session_state.messages.append({"role": "user", "content": quick_action, "timestamp": datetime.now()})
-    st.rerun()
-
 # Chat input
 if prompt := st.chat_input("Ask a question about AI, ML, or research papers..."):
+    # Classify and display query type
+    query_type = classify_query_type(prompt)
+    display_query_info(query_type)
+    
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt, "timestamp": datetime.now()})
     
