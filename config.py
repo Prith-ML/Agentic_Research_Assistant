@@ -39,34 +39,6 @@ UI_CONFIG = {
     "chat_input_placeholder": "Ask a question about AI, ML, or research papers..."
 }
 
-# Quick Actions
-QUICK_ACTIONS = [
-    {
-        "label": "🤖 AI Trends",
-        "query": "What are the latest trends in artificial intelligence research?"
-    },
-    {
-        "label": "🧠 ML Methods", 
-        "query": "Explain the key machine learning methods and their applications"
-    },
-    {
-        "label": "📊 Data Science",
-        "query": "What are the recent advances in data science and analytics?"
-    },
-    {
-        "label": "🔍 Computer Vision",
-        "query": "What are the latest developments in computer vision?"
-    },
-    {
-        "label": "📝 NLP Advances",
-        "query": "What are the recent advances in natural language processing?"
-    },
-    {
-        "label": "🎯 Research Tips",
-        "query": "How can I effectively conduct literature reviews in AI/ML?"
-    }
-]
-
 # Research Tips
 RESEARCH_TIPS = [
     "🔍 **Be specific**: Instead of 'AI', ask about 'transformer architectures' or 'few-shot learning'",
