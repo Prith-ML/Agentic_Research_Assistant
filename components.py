@@ -243,4 +243,94 @@ def create_welcome_section():
             <li><strong>Method Comparisons:</strong> Compare different approaches and techniques</li>
         </ul>
     </div>
-    """, unsafe_allow_html=True) 
+    """, unsafe_allow_html=True)
+
+def create_analytics_dashboard():
+    """Create an analytics dashboard for research insights."""
+    st.markdown("## 📊 Research Analytics")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🔍 Search Analytics")
+        if "search_analytics" not in st.session_state:
+            st.session_state.search_analytics = {
+                "total_searches": 0,
+                "successful_searches": 0,
+                "avg_response_time": 0,
+                "top_topics": []
+            }
+        
+        st.metric("Total Searches", st.session_state.search_analytics["total_searches"])
+        st.metric("Success Rate", f"{st.session_state.search_analytics['successful_searches']/max(st.session_state.search_analytics['total_searches'], 1)*100:.1f}%")
+    
+    with col2:
+        st.markdown("### 📈 Usage Trends")
+        if "usage_data" not in st.session_state:
+            st.session_state.usage_data = []
+        
+        if st.session_state.usage_data:
+            # Create a simple usage chart
+            import plotly.express as px
+            import pandas as pd
+            
+            df = pd.DataFrame(st.session_state.usage_data)
+            fig = px.line(df, x='timestamp', y='searches', title='Search Activity Over Time')
+            st.plotly_chart(fig, use_container_width=True)
+
+def create_research_insights():
+    """Create insights panel for research patterns."""
+    st.markdown("## 🧠 Research Insights")
+    
+    insight_type = st.selectbox(
+        "Choose insight type:",
+        ["Trend Analysis", "Topic Clustering", "Citation Patterns", "Research Gaps"]
+    )
+    
+    if insight_type == "Trend Analysis":
+        st.info("🔍 Use the trend analysis tool to identify emerging research patterns.")
+        topic = st.text_input("Enter research topic for trend analysis:")
+        if topic and st.button("Analyze Trends"):
+            with st.spinner("Analyzing trends..."):
+                from agent_runner import analyze_trends
+                result = analyze_trends(topic)
+                st.markdown(result)
+    
+    elif insight_type == "Topic Clustering":
+        st.info("📊 This would group related research topics together.")
+        st.write("Feature coming soon...")
+    
+    elif insight_type == "Citation Patterns":
+        st.info("📚 This would analyze citation networks and influential papers.")
+        st.write("Feature coming soon...")
+    
+    elif insight_type == "Research Gaps":
+        st.info("🎯 This would identify areas needing more research attention.")
+        st.write("Feature coming soon...")
+
+def create_advanced_search():
+    """Create advanced search interface with filters."""
+    st.markdown("## 🔍 Advanced Search")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        query = st.text_input("Search Query:")
+        date_from = st.date_input("From Date:", value=None)
+        date_to = st.date_input("To Date:", value=None)
+    
+    with col2:
+        category = st.selectbox(
+            "Research Category:",
+            ["All", "cs.AI", "cs.LG", "cs.CV", "cs.CL", "cs.NE", "stat.ML"]
+        )
+        min_relevance = st.slider("Minimum Relevance Score:", 0.0, 1.0, 0.7)
+    
+    if st.button("🔍 Advanced Search") and query:
+        with st.spinner("Performing advanced search..."):
+            # This would integrate with the enhanced search function
+            st.info("Advanced search with filters coming soon...")
+            st.write(f"Searching for: {query}")
+            st.write(f"Date range: {date_from} to {date_to}")
+            st.write(f"Category: {category}")
+            st.write(f"Min relevance: {min_relevance}") 
