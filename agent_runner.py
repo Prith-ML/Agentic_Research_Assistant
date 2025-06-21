@@ -6,7 +6,6 @@
 
 import streamlit as st
 import time
-from dotenv import load_dotenv
 from langchain.agents import Tool, AgentExecutor
 from langchain.agents.xml.base import XMLAgentOutputParser
 from langchain import hub
