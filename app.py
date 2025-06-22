@@ -4,18 +4,13 @@ import time
 from datetime import datetime
 from components import (
     display_chat_stats, 
-    display_agentic_stats,
     export_chat_history, 
     create_advanced_settings,
     display_message_with_metadata,
     create_feedback_system,
     create_research_tips,
-    create_welcome_section,
     create_agentic_welcome_section,
-    display_query_info,
-    create_agentic_insights_panel,
-    create_research_planning_interface,
-    create_agentic_features_guide
+    display_query_info
 )
 
 # Page configuration    
@@ -140,9 +135,8 @@ with st.sidebar:
     st.markdown("## 🤖 Agentic Research Assistant")
     st.markdown("---")
     
-    # Enhanced stats with agentic features
+    # Enhanced stats
     display_chat_stats()
-    display_agentic_stats()
     
     # Advanced settings
     st.session_state.settings = create_advanced_settings()
@@ -199,54 +193,6 @@ with st.sidebar:
 if not st.session_state.messages:
     create_agentic_welcome_section()
     
-    # Add agentic features showcase
-    st.markdown("## 🚀 Try Agentic Features")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### 🎯 Complex Research Goals")
-        st.markdown("""
-        Ask for comprehensive research tasks:
-        - "Give me a complete analysis of transformer architectures"
-        - "Research the latest developments in few-shot learning"
-        - "Compare different approaches to reinforcement learning"
-        """)
-    
-    with col2:
-        st.markdown("### 🤖 Agentic Behaviors")
-        st.markdown("""
-        Watch the AI:
-        - Break down complex goals into sub-tasks
-        - Self-evaluate response quality
-        - Suggest follow-up questions
-        - Learn from interactions
-        """)
-    
-    # Quick start examples
-    st.markdown("### 💡 Quick Start Examples")
-    
-    example_queries = [
-        "Give me a comprehensive analysis of transformer architectures in natural language processing",
-        "Research the latest developments in few-shot learning and their applications",
-        "Compare different approaches to reinforcement learning in robotics",
-        "Investigate the current state of research in computer vision for medical imaging"
-    ]
-    
-    for i, query in enumerate(example_queries):
-        if st.button(f"Try: {query[:50]}...", key=f"example_{i}", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": query, "timestamp": datetime.now()})
-            st.rerun()
-    
-    # Agentic insights panel
-    create_agentic_insights_panel()
-    
-    # Research planning interface
-    create_research_planning_interface()
-    
-    # Agentic features guide
-    create_agentic_features_guide()
-    
 else:
     st.markdown("""
     <div class="main-header">
@@ -292,11 +238,6 @@ if prompt := st.chat_input("Ask a complex research question or simple query...")
 if st.session_state.messages:
     st.markdown("---")
     create_feedback_system()
-
-# Agentic insights panel (show after interactions)
-if st.session_state.messages:
-    st.markdown("---")
-    create_agentic_insights_panel()
 
 # Auto-scroll to bottom if enabled
 if st.session_state.settings["auto_scroll"] and st.session_state.messages:
