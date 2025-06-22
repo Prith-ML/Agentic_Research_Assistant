@@ -396,7 +396,7 @@ def intelligent_search(query: str) -> dict:
                             paper_id = match["metadata"].get("paper_id", "Unknown ID")
                             url = match["metadata"].get("url", "")
                             
-                            if score > 0.3:  # Threshold for relevance (lowered from 0.7 for testing)
+                            if score > 0.5:  # Threshold for relevance (lowered from 0.7 for testing)
                                 logger.info(f"Database1 match {i+1} PASSED threshold: {title}")
                                 # Don't include raw text in main response, only in sources
                                 db1_content += f"[Score: {score:.2f}] {title} by {authors} ({date})\n---\n"
