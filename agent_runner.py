@@ -182,8 +182,9 @@ def arxiv_search(query: str) -> dict:
         )
         
         if not out["matches"]:
+            content_type = "tech articles" if database_choice == "ragas1" else "research papers"
             return {
-                "content": f"No relevant papers found for this query in {database_choice} database.",
+                "content": f"Found {content_type} in {database_choice} database but none met the relevance threshold. Try rephrasing your question.",
                 "sources": [],
                 "paper_count": 0,
                 "database_used": database_choice
@@ -238,7 +239,7 @@ def arxiv_search(query: str) -> dict:
     except Exception as e:
         logger.error(f"Error in arxiv_search: {e}")
         return {
-            "content": f"Error searching papers: {str(e)}",
+            "content": f"Error searching content: {str(e)}",
             "sources": [],
             "paper_count": 0,
             "database_used": "unknown"
@@ -263,14 +264,19 @@ def format_sources(sources: list) -> str:
     
     citations = "\n\n## 📚 Sources & References\n\n"
     
+    # Determine content type based on database
     if ragas_sources and ragas1_sources:
-        citations += f"*Based on analysis of {len(sources)} research papers from multiple databases:*\n\n"
+        citations += f"*Based on analysis of {len(ragas_sources)} research papers and {len(ragas1_sources)} tech articles:*\n\n"
+    elif ragas_sources:
+        citations += f"*Based on analysis of {len(ragas_sources)} research papers:*\n\n"
+    elif ragas1_sources:
+        citations += f"*Based on analysis of {len(ragas1_sources)} tech articles:*\n\n"
     else:
-        citations += f"*Based on analysis of {len(sources)} research papers:*\n\n"
+        citations += f"*Based on analysis of {len(sources)} sources:*\n\n"
     
     # Add database information if using multiple databases
     if ragas_sources and ragas1_sources:
-        citations += "**Primary Database (ragas):**\n"
+        citations += "**📄 Research Papers (arXiv):**\n"
         for i, source in enumerate(ragas_sources, 1):
             citations += f"**{i}.** {source['title']}\n"
             citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
@@ -278,23 +284,35 @@ def format_sources(sources: list) -> str:
                 citations += f"   - **Link:** [View Paper]({source['url']})\n"
             citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
         
-        citations += "**Secondary Database (ragas1):**\n"
+        citations += "**📰 Tech Articles:**\n"
         for i, source in enumerate(ragas1_sources, 1):
             citations += f"**{i}.** {source['title']}\n"
             citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
             if source.get('url'):
-                citations += f"   - **Link:** [View Paper]({source['url']})\n"
+                citations += f"   - **Link:** [View Article]({source['url']})\n"
             citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
     else:
-        # Single database format (original)
+        # Single database format
+        database_type = "research papers" if ragas_sources else "tech articles"
+        link_text = "View Paper" if ragas_sources else "View Article"
+        
         for i, source in enumerate(sources, 1):
             citations += f"**{i}.** {source['title']}\n"
             citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
             if source.get('url'):
-                citations += f"   - **Link:** [View Paper]({source['url']})\n"
+                citations += f"   - **Link:** [{link_text}]({source['url']})\n"
             citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
     
-    citations += "---\n*These sources were retrieved using semantic search through arXiv papers.*"
+    # Add appropriate footer based on database used
+    if ragas_sources and ragas1_sources:
+        citations += "---\n*These sources were retrieved using semantic search through arXiv research papers and AI tech articles.*"
+    elif ragas_sources:
+        citations += "---\n*These sources were retrieved using semantic search through arXiv research papers.*"
+    elif ragas1_sources:
+        citations += "---\n*These sources were retrieved using semantic search through AI tech articles.*"
+    else:
+        citations += "---\n*These sources were retrieved using semantic search.*"
+    
     return citations
 
 def semantic_search(query: str, context: str = "") -> dict:
