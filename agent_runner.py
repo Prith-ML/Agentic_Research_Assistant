@@ -406,9 +406,9 @@ tools = [
     Tool.from_function(
         func=search_databases_wrapper,  # Use wrapper instead of lambda
         name="search_databases",
-        description="Use this tool to answer questions about AI, ML, or research papers. "
-                   "This tool searches through a curated dataset of scientific papers "
-                   "and returns relevant excerpts to help answer research questions."
+        description="Use this tool for ANY question about AI companies, industry developments, product announcements, company research, current AI news, AI models, AI developments, or any specific AI-related information. "
+                   "This tool searches through a curated dataset of scientific papers and tech articles "
+                   "and returns relevant excerpts to help answer questions about current AI developments."
     ),
     Tool.from_function(
         func=summarize_papers,
@@ -420,9 +420,9 @@ tools = [
     Tool.from_function(
         func=analyze_trends,
         name="analyze_trends",
-        description="Use this tool when the user explicitly asks for 'trends', 'emerging directions', 'recent developments', 'evolution', or 'future directions' in a research area. "
+        description="Use this tool when the user explicitly asks for 'trends', 'emerging directions', 'recent developments', 'evolution', 'future directions', 'industry insights', or 'company developments' in a research area or AI company. "
                    "This tool will: 1) Search for recent papers and developments, 2) Provide a structured trend analysis with emerging patterns, methodologies, research shifts, and breakthroughs, "
-                   "3) Include proper citations. Use this for understanding current research directions, identifying emerging areas, or analyzing how a field is evolving."
+                   "3) Include proper citations. Use this for understanding current research directions, identifying emerging areas, analyzing how a field is evolving, or getting company insights."
     )
 ]
 
@@ -456,9 +456,9 @@ try:
         }
         | prompt.partial(
             tools=convert_tools(tools),
-            system_message="CRITICAL: For ANY question about AI, ML, research, technical topics, or current developments, you MUST use the search tools to get accurate and current information. "
-                          "NEVER rely on your own knowledge for these topics. "
-                          "ALWAYS use search_databases for general questions, summarize_papers for summaries/literature reviews, or analyze_trends for trends/developments. "
+            system_message="CRITICAL: For questions about AI companies, industry developments, current AI news, product announcements, company research, or any specific AI-related information, you MUST use the search tools to get current and accurate information. "
+                          "For questions about AI models, AI developments, or any AI topic that might have recent updates, ALWAYS search the database first. "
+                          "Use search_databases for company information and current developments, summarize_papers for research summaries, or analyze_trends for trend analysis. "
                           "Only use your knowledge for basic definitions that don't require current information. "
                           "This is a research assistant - your primary job is to search databases and provide sourced information."
         )
@@ -486,6 +486,7 @@ CACHE_CLEANUP_SIZE = 20
 
 # Query enhancement and classification system
 QUERY_ENHANCEMENTS = {
+    "company_info": "Focus on current company developments, industry news, and recent announcements from AI companies.",
     "general": "Focus on recent research papers and academic sources.",
     "comparative": "Provide detailed comparisons with specific examples from research papers.",
     "trend": "Emphasize temporal trends and evolution of the field with recent developments.",
@@ -506,8 +507,12 @@ def classify_query_type(query: str) -> str:
     """
     query_lower = query.lower()
     
+    # Check for company/industry queries (should trigger database search)
+    if any(word in query_lower for word in ["company", "industry", "insight", "development", "announcement", "product", "news", "current", "latest", "recent"]):
+        return "company_info"
+    
     # Check for comparative queries
-    if any(word in query_lower for word in ["compare", "difference", "vs", "versus", "versus", "contrast", "similarity"]):
+    elif any(word in query_lower for word in ["compare", "difference", "vs", "versus", "versus", "contrast", "similarity"]):
         return "comparative"
     
     # Check for trend queries
@@ -552,7 +557,7 @@ def enhance_query(query: str, query_type: str | None = None) -> str:
 
 def chat(query: str) -> str:
     """
-    Enhanced chat function that USES database usage for AI/ML questions.
+    Enhanced chat function that respects agent's tool choice and uses database as fallback.
     
     Args:
         query (str): The user's question
@@ -575,11 +580,7 @@ def chat(query: str) -> str:
         query_type = classify_query_type(query)
         enhanced_query = enhance_query(query, query_type)
         
-        # FORCE DATABASE SEARCH for all AI/ML questions
-        logger.info("Forcing database search for AI/ML question")
-        search_result = search_databases(query)
-        
-        # Execute the agent with enhanced query for additional context
+        # Execute the agent with enhanced query
         out = agent_executor.invoke({
             "input": enhanced_query,
             "chat_history": ""
@@ -587,71 +588,60 @@ def chat(query: str) -> str:
         
         agent_answer = out.get("output", "")
         
-        # ALWAYS use database results as primary response
-        if search_result["paper_count"] > 0:
-            logger.info(f"Using database results: {search_result['paper_count']} sources found")
-            
-            # Create a comprehensive response using database content
-            database_content = search_result["content"]
-            
-            # If agent provided additional context, combine it
-            if agent_answer and len(agent_answer) > 50:  # Only use if agent gave substantial answer
-                combined_response = f"{agent_answer}\n\n**Based on database search:**\n{database_content}"
-            else:
-                # Use database content as primary response
-                combined_response = f"**Based on database search:**\n{database_content}"
-            
-            # Always add sources
-            sources_section = format_sources(search_result["sources"])
-            full_response = combined_response + sources_section
-            
-            logger.info(f"Database response created with {len(search_result['sources'])} sources")
-            
-        else:
-            # No database results found
-            logger.warning("No database results found, using agent response")
-            full_response = agent_answer
-            
-            # Try to get sources from agent's tool usage as fallback
-            sources_section = ""
-            try:
-                if "intermediate_steps" in out:
-                    for step in out["intermediate_steps"]:
-                        logger.info(f"Agent used tool: {step[0].tool}")
-                        
-                        # Check for search_databases tool
-                        if step[0].tool == "search_databases" and last_search_result and last_search_result["sources"]:
-                            sources_section = format_sources(last_search_result["sources"])
+        # Check if agent used any tools
+        agent_used_tools = False
+        sources_section = ""
+        
+        try:
+            if "intermediate_steps" in out:
+                for step in out["intermediate_steps"]:
+                    logger.info(f"Agent used tool: {step[0].tool}")
+                    agent_used_tools = True
+                    
+                    # Check for search_databases tool
+                    if step[0].tool == "search_databases" and last_search_result and last_search_result["sources"]:
+                        sources_section = format_sources(last_search_result["sources"])
+                        break
+                    
+                    # Check for summarize_papers tool - extract sources from the response
+                    elif step[0].tool == "summarize_papers":
+                        logger.info("Agent used summarize_papers tool")
+                        # The summarize_papers function already includes sources in its response
+                        agent_output = step[1] if len(step) > 1 else ""
+                        if "## 📚 Sources & References" in agent_output:
+                            # Extract the sources section from the agent's response
+                            sources_start = agent_output.find("## 📚 Sources & References")
+                            sources_section = agent_output[sources_start:]
                             break
-                        
-                        # Check for summarize_papers tool - extract sources from the response
-                        elif step[0].tool == "summarize_papers":
-                            logger.info("Agent used summarize_papers tool")
-                            # The summarize_papers function already includes sources in its response
-                            # We need to extract them from the agent's output
-                            agent_output = step[1] if len(step) > 1 else ""
-                            if "## 📚 Sources & References" in agent_output:
-                                # Extract the sources section from the agent's response
-                                sources_start = agent_output.find("## 📚 Sources & References")
-                                sources_section = agent_output[sources_start:]
-                                break
-                        
-                        # Check for analyze_trends tool - extract sources from the response
-                        elif step[0].tool == "analyze_trends":
-                            logger.info("Agent used analyze_trends tool")
-                            # The analyze_trends function already includes sources in its response
-                            agent_output = step[1] if len(step) > 1 else ""
-                            if "## 📚 Sources & References" in agent_output:
-                                # Extract the sources section from the agent's response
-                                sources_start = agent_output.find("## 📚 Sources & References")
-                                sources_section = agent_output[sources_start:]
-                                break
+                    
+                    # Check for analyze_trends tool - extract sources from the response
+                    elif step[0].tool == "analyze_trends":
+                        logger.info("Agent used analyze_trends tool")
+                        # The analyze_trends function already includes sources in its response
+                        agent_output = step[1] if len(step) > 1 else ""
+                        if "## 📚 Sources & References" in agent_output:
+                            # Extract the sources section from the agent's response
+                            sources_start = agent_output.find("## 📚 Sources & References")
+                            sources_section = agent_output[sources_start:]
+                            break
                             
-            except Exception as e:
-                logger.warning(f"Could not extract sources from agent: {e}")
-            
-            if sources_section:
-                full_response += sources_section
+        except Exception as e:
+            logger.warning(f"Could not extract sources from agent: {e}")
+        
+        # If agent didn't use tools, try database search as fallback
+        if not agent_used_tools:
+            logger.info("Agent didn't use tools, trying database search as fallback")
+            search_result = search_databases(query)
+            if search_result["paper_count"] > 0:
+                logger.info(f"Fallback search found {search_result['paper_count']} sources")
+                sources_section = format_sources(search_result["sources"])
+                # Combine agent answer with database sources
+                full_response = agent_answer + sources_section
+            else:
+                full_response = agent_answer
+        else:
+            # Agent used tools, use its response
+            full_response = agent_answer
         
         # Cache the response
         response_cache[cache_key] = full_response
@@ -674,7 +664,7 @@ def chat(query: str) -> str:
         if len(chat_history) > MAX_HISTORY_EXCHANGES:
             chat_history = chat_history[-MAX_HISTORY_EXCHANGES:]
         
-        logger.info(f"Query processed successfully. Type: {query_type}, Database sources: {search_result['paper_count']}")
+        logger.info(f"Query processed successfully. Type: {query_type}, Agent used tools: {agent_used_tools}")
         return full_response
         
     except Exception as e:
