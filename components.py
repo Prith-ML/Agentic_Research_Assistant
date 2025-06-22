@@ -56,6 +56,54 @@ def display_chat_stats():
         else:
             st.metric("Session Duration", "0m")
 
+def display_agentic_stats():
+    """Display agentic AI statistics."""
+    try:
+        from agent_runner import get_agentic_insights
+        insights = get_agentic_insights()
+        
+        st.markdown("### 🤖 Agentic AI Stats")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            research_plans = insights.get("research_plans_created", 0)
+            st.metric(
+                "Research Plans Created",
+                research_plans,
+                help="Number of complex goals that required planning"
+            )
+        
+        with col2:
+            proactive_suggestions = insights.get("proactive_suggestions", 0)
+            st.metric(
+                "Proactive Suggestions",
+                proactive_suggestions,
+                help="Number of follow-up questions and suggestions generated"
+            )
+        
+        with col3:
+            tool_effectiveness = insights.get("tool_effectiveness", {})
+            total_tool_uses = sum(stats.get("total_uses", 0) for stats in tool_effectiveness.values())
+            st.metric(
+                "Tool Uses",
+                total_tool_uses,
+                help="Total number of tool executions"
+            )
+        
+        # Display tool effectiveness
+        if tool_effectiveness:
+            st.markdown("#### 🔧 Tool Effectiveness")
+            for tool_name, stats in tool_effectiveness.items():
+                if stats.get("total_uses", 0) > 0:
+                    success_rate = (stats.get("successful_uses", 0) / stats.get("total_uses", 1)) * 100
+                    avg_quality = stats.get("avg_quality", 0) * 100
+                    
+                    st.write(f"**{tool_name}**: {success_rate:.1f}% success rate, {avg_quality:.1f}% avg quality")
+        
+    except Exception as e:
+        st.info("Agentic stats will appear after first interaction")
+
 def export_chat_history():
     """Export chat history in various formats."""
     if not st.session_state.messages:
@@ -99,11 +147,11 @@ def create_advanced_settings():
         with col1:
             st.markdown("**Search Settings**")
             search_results = st.slider(
-                "Number of papers to search", 
+                "Number of sources to search", 
                 min_value=1, 
                 max_value=10, 
                 value=5,
-                help="Number of relevant papers to include in search results"
+                help="Number of relevant sources to include in search results"
             )
             
             temperature = st.slider(
@@ -128,12 +176,19 @@ def create_advanced_settings():
                 value=True,
                 help="Automatically scroll to the newest message"
             )
+            
+            show_database_info = st.checkbox(
+                "Show database selection info",
+                value=True,
+                help="Display which database the AI selected for each query"
+            )
         
         return {
             "search_results": search_results,
             "temperature": temperature,
             "show_timestamps": show_timestamps,
-            "auto_scroll": auto_scroll
+            "auto_scroll": auto_scroll,
+            "show_database_info": show_database_info
         }
 
 def display_message_with_metadata(message, show_timestamp=False):
@@ -182,11 +237,12 @@ def create_research_tips():
     tips = [
         "🔍 **Be specific**: Instead of 'AI', ask about 'transformer architectures' or 'few-shot learning'",
         "📚 **Ask for summaries**: Request paper summaries or literature reviews on specific topics",
-        "📰 **Get latest news**: Ask about recent AI developments, company announcements, or industry trends",
         "🎯 **Compare methods**: Ask to compare different approaches or techniques",
         "📊 **Recent trends**: Inquire about the latest developments in your field of interest",
         "🔬 **Technical details**: Ask for explanations of specific algorithms or concepts",
-        "🏢 **Industry insights**: Get information about AI companies, products, and market trends"
+        "🤖 **AI Database Selection**: The AI automatically chooses the best database (academic papers, industry articles, or both) based on your query",
+        "📄 **Academic queries**: Ask about research methodologies, theoretical concepts, or scientific studies",
+        "🚀 **Industry queries**: Ask about practical applications, company announcements, or implementation guides"
     ]
     
     for tip in tips:
@@ -199,9 +255,27 @@ def create_welcome_section():
     st.markdown("""
     <div style='text-align: center; padding: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; color: white; margin: 2rem 0;'>
         <h1>🔬 AI Research Assistant</h1>
-        <p style='font-size: 1.2rem; margin: 1rem 0;'>Your intelligent companion for exploring scientific research and AI tech articles</p>
+        <p style='font-size: 1.2rem; margin: 1rem 0;'>Your intelligent companion for exploring scientific research</p>
         <div style='background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 10px; margin: 1rem 0;'>
-            <strong>Powered by:</strong> Claude 3.5 Haiku • Pinecone Vector DB • arXiv Dataset • AI Tech Articles
+            <strong>Powered by:</strong> Claude 3.5 Haiku • Pinecone Vector DB • arXiv Dataset
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def create_agentic_welcome_section():
+    """Create an enhanced welcome section highlighting agentic features."""
+    st.markdown("""
+    <div style='text-align: center; padding: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; color: white; margin: 2rem 0;'>
+        <h1>🤖 Agentic Research Assistant</h1>
+        <p style='font-size: 1.2rem; margin: 1rem 0;'>Your intelligent research companion with autonomous planning and self-reflection</p>
+        <div style='background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 10px; margin: 1rem 0;'>
+            <strong>Agentic Features:</strong> Goal Planning • Self-Reflection • Proactive Suggestions • Tool Optimization
+        </div>
+        <div style='background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 10px; margin: 1rem 0;'>
+            <strong>🤖 Intelligent Database Selection:</strong> AI automatically chooses the best database (Academic Papers • Industry Articles • Both) based on your query
+        </div>
+        <div style='margin-top: 1rem; font-size: 0.9rem;'>
+            <strong>Try asking:</strong> "Give me a comprehensive analysis of transformer architectures" or "Research the latest developments in few-shot learning"
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -319,22 +393,148 @@ def display_query_info(query_type: str):
     }
     
     if query_type in query_type_info:
-        st.info(f"{query_type_info[query_type]}: {enhancement_info[query_type]}") 
+        st.info(f"{query_type_info[query_type]}: {enhancement_info[query_type]}")
 
-def display_database_selection(database_used: str):
-    """Display which database was selected for the query."""
-    if database_used == "database1":
-        database_info = "📄 arXiv Research Papers"
-        color = "#667eea"
-    elif database_used == "database2":
-        database_info = "📰 AI Tech Articles"
-        color = "#764ba2"
-    else:
-        database_info = "🔍 Unknown Database"
-        color = "#666"
+def create_agentic_insights_panel():
+    """Create a panel showing agentic AI insights and performance."""
+    st.markdown("## 🤖 Agentic AI Insights")
     
-    st.markdown(f"""
-    <div style='background: #f8f9fa; padding: 0.5rem; border-radius: 5px; margin: 0.5rem 0; border-left: 4px solid {color};'>
-        <small><strong>Searching:</strong> {database_info}</small>
-    </div>
-    """, unsafe_allow_html=True) 
+    try:
+        from agent_runner import get_agentic_insights
+        insights = get_agentic_insights()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 📊 Performance Metrics")
+            
+            # Quality trends
+            quality_trends = insights.get("quality_trends", [])
+            if quality_trends:
+                recent_quality = quality_trends[-1]["reflection"].quality_score if quality_trends else 0
+                st.metric("Recent Response Quality", f"{recent_quality:.1%}")
+            
+            # Research plans
+            research_plans = insights.get("research_plans_created", 0)
+            st.metric("Complex Goals Handled", research_plans)
+            
+            # Proactive suggestions
+            proactive_count = insights.get("proactive_suggestions", 0)
+            st.metric("Proactive Suggestions", proactive_count)
+        
+        with col2:
+            st.markdown("### 🔧 Tool Performance")
+            
+            tool_effectiveness = insights.get("tool_effectiveness", {})
+            if tool_effectiveness:
+                for tool_name, stats in tool_effectiveness.items():
+                    if stats.get("total_uses", 0) > 0:
+                        success_rate = (stats.get("successful_uses", 0) / stats.get("total_uses", 1)) * 100
+                        avg_quality = stats.get("avg_quality", 0) * 100
+                        
+                        st.write(f"**{tool_name}**")
+                        st.write(f"Success: {success_rate:.1f}% | Quality: {avg_quality:.1f}%")
+                        st.progress(success_rate / 100)
+        
+        # Learning insights
+        st.markdown("### 🧠 Learning Insights")
+        
+        if quality_trends:
+            st.write("**Recent Quality Trends:**")
+            for trend in quality_trends[-3:]:  # Last 3
+                quality = trend["reflection"].quality_score
+                timestamp = trend["timestamp"].strftime("%H:%M")
+                st.write(f"• {timestamp}: {quality:.1%} quality")
+        
+        # Agentic behavior summary
+        st.markdown("### 🎯 Agentic Behavior Summary")
+        
+        agentic_behaviors = []
+        if research_plans > 0:
+            agentic_behaviors.append("✅ Goal-oriented planning")
+        if proactive_count > 0:
+            agentic_behaviors.append("✅ Proactive suggestions")
+        if any(stats.get("avg_quality", 0) > 0.8 for stats in tool_effectiveness.values()):
+            agentic_behaviors.append("✅ High-quality responses")
+        
+        if agentic_behaviors:
+            for behavior in agentic_behaviors:
+                st.write(behavior)
+        else:
+            st.write("🔄 Agentic features will activate with more interactions")
+    
+    except Exception as e:
+        st.info("Agentic insights will appear after first interaction")
+
+def create_research_planning_interface():
+    """Create an interface for research planning and goal setting."""
+    st.markdown("## 🎯 Research Planning")
+    
+    st.info("""
+    **Agentic Planning Features:**
+    - **Goal Decomposition**: Complex research goals are broken down into manageable sub-tasks
+    - **Multi-step Execution**: Systematic approach to research with progress tracking
+    - **Tool Optimization**: Automatic selection of best tools for each sub-task
+    - **Quality Assurance**: Self-evaluation and improvement suggestions
+    """)
+    
+    # Example research goals
+    st.markdown("### 💡 Example Complex Research Goals")
+    
+    example_goals = [
+        "Give me a comprehensive analysis of transformer architectures in natural language processing",
+        "Research the latest developments in few-shot learning and their applications",
+        "Compare different approaches to reinforcement learning in robotics",
+        "Investigate the current state of research in computer vision for medical imaging",
+        "Analyze trends in machine learning for climate change prediction"
+    ]
+    
+    selected_goal = st.selectbox(
+        "Try a complex research goal:",
+        ["Select a goal..."] + example_goals
+    )
+    
+    if selected_goal and selected_goal != "Select a goal...":
+        st.write(f"**Selected Goal:** {selected_goal}")
+        st.write("This will trigger the agentic planning system with:")
+        st.write("• Goal decomposition into sub-tasks")
+        st.write("• Multi-step research execution")
+        st.write("• Self-evaluation and improvement")
+        st.write("• Proactive follow-up suggestions")
+
+def create_agentic_features_guide():
+    """Create a guide explaining agentic AI features."""
+    st.markdown("## 🤖 Agentic AI Features Guide")
+    
+    features = [
+        {
+            "name": "🎯 Goal-Oriented Planning",
+            "description": "Automatically breaks down complex research goals into manageable sub-tasks",
+            "example": "Ask: 'Give me a comprehensive analysis of transformer architectures'"
+        },
+        {
+            "name": "🤔 Self-Reflection",
+            "description": "Evaluates response quality and identifies areas for improvement",
+            "example": "Shows confidence levels and quality scores for each response"
+        },
+        {
+            "name": "🔍 Gap Detection",
+            "description": "Identifies missing information and suggests additional research",
+            "example": "Highlights topics that need more exploration"
+        },
+        {
+            "name": "💡 Proactive Suggestions",
+            "description": "Generates follow-up questions and research directions",
+            "example": "Suggests related topics and future research areas"
+        },
+        {
+            "name": "🔧 Tool Optimization",
+            "description": "Learns which tools work best for different types of queries",
+            "example": "Tracks tool effectiveness and improves over time"
+        }
+    ]
+    
+    for feature in features:
+        with st.expander(f"**{feature['name']}**"):
+            st.write(feature['description'])
+            st.write(f"**Example:** {feature['example']}") 
