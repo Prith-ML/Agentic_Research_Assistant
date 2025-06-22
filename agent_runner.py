@@ -635,8 +635,8 @@ def chat(query: str) -> str:
             if search_result["paper_count"] > 0:
                 logger.info(f"Fallback search found {search_result['paper_count']} sources")
                 sources_section = format_sources(search_result["sources"])
-                # Combine agent answer with database sources
-                full_response = agent_answer + sources_section
+                # Replace agent's short answer with database content + sources
+                full_response = search_result["content"] + sources_section
             else:
                 full_response = agent_answer
         else:
@@ -745,4 +745,3 @@ def test_source_extraction():
     else:
         logger.error("No sources found in test search")
         return False
-
