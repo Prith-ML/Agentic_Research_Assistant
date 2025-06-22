@@ -182,9 +182,11 @@ def create_research_tips():
     tips = [
         "🔍 **Be specific**: Instead of 'AI', ask about 'transformer architectures' or 'few-shot learning'",
         "📚 **Ask for summaries**: Request paper summaries or literature reviews on specific topics",
+        "📰 **Get latest news**: Ask about recent AI developments, company announcements, or industry trends",
         "🎯 **Compare methods**: Ask to compare different approaches or techniques",
         "📊 **Recent trends**: Inquire about the latest developments in your field of interest",
-        "🔬 **Technical details**: Ask for explanations of specific algorithms or concepts"
+        "🔬 **Technical details**: Ask for explanations of specific algorithms or concepts",
+        "🏢 **Industry insights**: Get information about AI companies, products, and market trends"
     ]
     
     for tip in tips:
@@ -197,9 +199,9 @@ def create_welcome_section():
     st.markdown("""
     <div style='text-align: center; padding: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; color: white; margin: 2rem 0;'>
         <h1>🔬 AI Research Assistant</h1>
-        <p style='font-size: 1.2rem; margin: 1rem 0;'>Your intelligent companion for exploring scientific research</p>
+        <p style='font-size: 1.2rem; margin: 1rem 0;'>Your intelligent companion for exploring scientific research and AI tech articles</p>
         <div style='background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 10px; margin: 1rem 0;'>
-            <strong>Powered by:</strong> Claude 3.5 Haiku • Pinecone Vector DB • arXiv Dataset
+            <strong>Powered by:</strong> Claude 3.5 Haiku • Pinecone Vector DB • arXiv Dataset • Tech Articles
         </div>
     </div>
     """, unsafe_allow_html=True)
