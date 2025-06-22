@@ -211,91 +211,6 @@ class ToolEffectivenessTracker:
 # EXISTING FUNCTIONS (Enhanced with agentic features)
 # ============================================================================
 
-def arxiv_search(query: str) -> dict:
-    """
-    Enhanced search through arXiv papers using vector similarity.
-    
-    Args:
-        query (str): The search query
-        
-    Returns:
-        dict: Dictionary containing search results and source information
-    """
-    try:
-        logger.info(f"Searching for: {query}")
-        xq = embed.embed_query(query)
-        
-        # Enhanced query with better parameters
-        out = database1_index.query(
-            vector=xq, 
-            top_k=8,  # Increased for better coverage
-            include_metadata=True,
-            include_values=False
-        )
-        
-        if not out["matches"]:
-            return {
-                "content": "No relevant papers found for this query.",
-                "sources": [],
-                "paper_count": 0
-            }
-        
-        # Enhanced result processing with ranking and source tracking
-        results = []
-        sources = []
-        
-        for match in out["matches"]:
-            if "metadata" in match and "text" in match["metadata"]:
-                score = match.get("score", 0)
-                title = match["metadata"].get("title", "Unknown Title")
-                authors = match["metadata"].get("authors", "Unknown Authors")
-                date = match["metadata"].get("date", "Unknown Date")
-                paper_id = match["metadata"].get("paper_id", "Unknown ID")
-                url = match["metadata"].get("url", "")
-                
-                # Only include high-quality matches
-                if score > 0.7:  # Threshold for relevance
-                    result_text = f"[Score: {score:.2f}] {title} by {authors} ({date})\n{match['metadata']['text']}"
-                    results.append(result_text)
-                    
-                    # Add source information
-                    source_info = {
-                        "title": title,
-                        "authors": authors,
-                        "date": date,
-                        "paper_id": paper_id,
-                        "url": url,
-                        "relevance_score": score,
-                        "excerpt": match["metadata"]["text"][:200] + "..." if len(match["metadata"]["text"]) > 200 else match["metadata"]["text"]
-                    }
-                    sources.append(source_info)
-        
-        if not results:
-            return {
-                "content": "Found papers but none met the relevance threshold. Try rephrasing your question.",
-                "sources": [],
-                "paper_count": 0
-            }
-        
-        # Track tool effectiveness
-        success = len(sources) > 0
-        tool_tracker.record_tool_usage("arxiv_search", query, success)
-        
-        return {
-            "content": "\n---\n".join(results[:5]),  # Return top 5 most relevant
-            "sources": sources[:5],  # Top 5 sources
-            "paper_count": len(sources)
-        }
-        
-    except Exception as e:
-        logger.error(f"Error in arxiv_search: {e}")
-        tool_tracker.record_tool_usage("arxiv_search", query, False)
-        return {
-            "content": f"Error searching papers: {str(e)}",
-            "sources": [],
-            "paper_count": 0
-        }
-
 def format_sources(sources: list) -> str:
     """
     Format sources into a nice citation format.
@@ -349,14 +264,6 @@ def format_sources(sources: list) -> str:
     
     citations += "---\n*These sources were retrieved using semantic search through multiple databases.*"
     return citations
-
-def semantic_search(query: str, context: str = "") -> dict:
-    """
-    Semantic search that considers conversation context.
-    """
-    # Combine query with context for better search
-    enhanced_query = f"{query} {context}".strip()
-    return arxiv_search(enhanced_query)
 
 def summarize_papers(query: str) -> str:
     """
@@ -440,93 +347,6 @@ def analyze_trends(topic: str) -> str:
         tool_tracker.record_tool_usage("analyze_trends", topic, False)
         return f"Error analyzing trends: {str(e)}"
 
-def ai_tech_search(query: str) -> dict:
-    """
-    Search through AI Tech articles using vector similarity.
-    
-    Args:
-        query (str): The search query
-        
-    Returns:
-        dict: Dictionary containing search results and source information
-    """
-    try:
-        logger.info(f"Searching AI Tech articles for: {query}")
-        xq = embed.embed_query(query)
-        
-        # Enhanced query with better parameters
-        out = database2_index.query(
-            vector=xq, 
-            top_k=8,  # Increased for better coverage
-            include_metadata=True,
-            include_values=False
-        )
-        
-        if not out["matches"]:
-            return {
-                "content": "No relevant AI Tech articles found for this query.",
-                "sources": [],
-                "article_count": 0
-            }
-        
-        # Enhanced result processing with ranking and source tracking
-        results = []
-        sources = []
-        
-        for match in out["matches"]:
-            if "metadata" in match and "text" in match["metadata"]:
-                score = match.get("score", 0)
-                title = match["metadata"].get("title", "Unknown Title")
-                author = match["metadata"].get("author", "Unknown Author")
-                date = match["metadata"].get("date", "Unknown Date")
-                article_id = match["metadata"].get("article_id", "Unknown ID")
-                url = match["metadata"].get("url", "")
-                source = match["metadata"].get("source", "Unknown Source")
-                
-                # Only include high-quality matches
-                if score > 0.7:  # Threshold for relevance
-                    result_text = f"[Score: {score:.2f}] {title} by {author} ({source}, {date})\n{match['metadata']['text']}"
-                    results.append(result_text)
-                    
-                    # Add source information
-                    source_info = {
-                        "title": title,
-                        "author": author,
-                        "date": date,
-                        "article_id": article_id,
-                        "url": url,
-                        "source": source,
-                        "relevance_score": score,
-                        "excerpt": match["metadata"]["text"][:200] + "..." if len(match["metadata"]["text"]) > 200 else match["metadata"]["text"]
-                    }
-                    sources.append(source_info)
-        
-        if not results:
-            return {
-                "content": "Found articles but none met the relevance threshold. Try rephrasing your question.",
-                "sources": [],
-                "article_count": 0
-            }
-        
-        # Track tool effectiveness
-        success = len(sources) > 0
-        tool_tracker.record_tool_usage("ai_tech_search", query, success)
-        
-        return {
-            "content": "\n---\n".join(results[:5]),  # Return top 5 most relevant
-            "sources": sources[:5],  # Top 5 sources
-            "article_count": len(sources)
-        }
-        
-    except Exception as e:
-        logger.error(f"Error in ai_tech_search: {e}")
-        tool_tracker.record_tool_usage("ai_tech_search", query, False)
-        return {
-            "content": f"Error searching AI Tech articles: {str(e)}",
-            "sources": [],
-            "article_count": 0
-        }
-
 def intelligent_search(query: str) -> dict:
     """
     Intelligently search the most appropriate database(s) based on query analysis.
@@ -546,20 +366,105 @@ def intelligent_search(query: str) -> dict:
         combined_content = ""
         combined_sources = []
         
-        # Search based on LLM's decision
+        # Search database1 (arXiv papers) if selected
         if selected_database == "database1" or selected_database == "both":
-            arxiv_results = arxiv_search(query)
-            if arxiv_results["paper_count"] > 0:
-                combined_content += "## 📚 Academic Research Papers\n\n"
-                combined_content += arxiv_results["content"] + "\n\n"
-                combined_sources.extend(arxiv_results["sources"])
+            try:
+                logger.info(f"Searching database1 (arXiv) for: {query}")
+                xq = embed.embed_query(query)
+                
+                out = database1_index.query(
+                    vector=xq, 
+                    top_k=8,
+                    include_metadata=True,
+                    include_values=False
+                )
+                
+                if out["matches"]:
+                    db1_content = "## 📚 Academic Research Papers\n\n"
+                    db1_sources = []
+                    
+                    for match in out["matches"]:
+                        if "metadata" in match and "text" in match["metadata"]:
+                            score = match.get("score", 0)
+                            title = match["metadata"].get("title", "Unknown Title")
+                            authors = match["metadata"].get("authors", "Unknown Authors")
+                            date = match["metadata"].get("date", "Unknown Date")
+                            paper_id = match["metadata"].get("paper_id", "Unknown ID")
+                            url = match["metadata"].get("url", "")
+                            
+                            if score > 0.7:  # Threshold for relevance
+                                result_text = f"[Score: {score:.2f}] {title} by {authors} ({date})\n{match['metadata']['text']}"
+                                db1_content += result_text + "\n---\n"
+                                
+                                source_info = {
+                                    "title": title,
+                                    "authors": authors,
+                                    "date": date,
+                                    "paper_id": paper_id,
+                                    "url": url,
+                                    "relevance_score": score,
+                                    "excerpt": match["metadata"]["text"][:200] + "..." if len(match["metadata"]["text"]) > 200 else match["metadata"]["text"],
+                                    "database": "arXiv Papers"
+                                }
+                                db1_sources.append(source_info)
+                    
+                    if db1_sources:
+                        combined_content += db1_content + "\n"
+                        combined_sources.extend(db1_sources)
+                        
+            except Exception as e:
+                logger.error(f"Error searching database1: {e}")
         
+        # Search database2 (AI Tech articles) if selected
         if selected_database == "database2" or selected_database == "both":
-            ai_tech_results = ai_tech_search(query)
-            if ai_tech_results["article_count"] > 0:
-                combined_content += "## 🚀 AI Tech Articles\n\n"
-                combined_content += ai_tech_results["content"] + "\n\n"
-                combined_sources.extend(ai_tech_results["sources"])
+            try:
+                logger.info(f"Searching database2 (AI Tech) for: {query}")
+                xq = embed.embed_query(query)
+                
+                out = database2_index.query(
+                    vector=xq, 
+                    top_k=8,
+                    include_metadata=True,
+                    include_values=False
+                )
+                
+                if out["matches"]:
+                    db2_content = "## 🚀 AI Tech Articles\n\n"
+                    db2_sources = []
+                    
+                    for match in out["matches"]:
+                        if "metadata" in match and "text" in match["metadata"]:
+                            score = match.get("score", 0)
+                            title = match["metadata"].get("title", "Unknown Title")
+                            author = match["metadata"].get("author", "Unknown Author")
+                            date = match["metadata"].get("date", "Unknown Date")
+                            article_id = match["metadata"].get("article_id", "Unknown ID")
+                            url = match["metadata"].get("url", "")
+                            source = match["metadata"].get("source", "Unknown Source")
+                            
+                            if score > 0.7:  # Threshold for relevance
+                                result_text = f"[Score: {score:.2f}] {title} by {author} ({source}, {date})\n{match['metadata']['text']}"
+                                db2_content += result_text + "\n---\n"
+                                
+                                source_info = {
+                                    "title": title,
+                                    "author": author,
+                                    "date": date,
+                                    "article_id": article_id,
+                                    "url": url,
+                                    "source": source,
+                                    "relevance_score": score,
+                                    "excerpt": match["metadata"]["text"][:200] + "..." if len(match["metadata"]["text"]) > 200 else match["metadata"]["text"],
+                                    "database": "AI Tech Articles"
+                                }
+                                db2_sources.append(source_info)
+                    
+                    if db2_sources:
+                        combined_content += db2_content + "\n"
+                        combined_sources.extend(db2_sources)
+                        
+            except Exception as e:
+                logger.error(f"Error searching database2: {e}")
         
         if not combined_content:
             return {
