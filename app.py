@@ -153,18 +153,20 @@ with st.sidebar:
     # About section
     st.markdown("### ℹ️ About")
     st.markdown("""
-    This AI Research Assistant helps you explore scientific papers from arXiv.
+    This AI Research Assistant helps you explore scientific papers from arXiv and AI tech articles.
     
     **Features:**
-    - 🔍 Search across AI/ML papers
+    - 🔍 Search across AI/ML papers and tech articles
     - 📚 Get detailed summaries
     - 💡 Ask technical questions
-    - 🎯 Find relevant research
+    - 🎯 Find relevant research and news
+    - 📰 Access latest AI industry updates
     
     **Powered by:**
     - Claude 3.5 Haiku
     - Pinecone Vector DB
     - arXiv Dataset
+    - AI Tech Articles Database
     """)
     
     st.markdown("---")
@@ -183,7 +185,7 @@ else:
     st.markdown("""
     <div class="main-header">
         <h1>🔬 AI Research Assistant</h1>
-        <p>Ask questions about AI, machine learning, and research papers from arXiv</p>
+        <p>Ask questions about AI, machine learning, research papers from arXiv, and AI tech articles</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -192,7 +194,7 @@ for message in st.session_state.messages:
     display_message_with_metadata(message, st.session_state.settings["show_timestamps"])
 
 # Chat input
-if prompt := st.chat_input("Ask a question about AI, ML, or research papers..."):
+if prompt := st.chat_input("Ask a question about AI, ML, research papers from arXiv, or AI tech articles..."):
     # Classify and display query type
     query_type = classify_query_type(prompt)
     display_query_info(query_type)
