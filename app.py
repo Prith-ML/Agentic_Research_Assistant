@@ -246,4 +246,3 @@ if st.session_state.settings["auto_scroll"] and st.session_state.messages:
         window.scrollTo(0, document.body.scrollHeight);
     </script>
     """, unsafe_allow_html=True)
-
