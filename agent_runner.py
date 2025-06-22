@@ -242,11 +242,7 @@ def format_sources(sources: list) -> str:
         citations += "### 📄 Academic Research Papers\n\n"
         for i, source in enumerate(papers, 1):
             citations += f"**{i}.** {source['title']}\n"
-            citations += f"   - **Authors:** {source['authors']}\n"
-            citations += f"   - **Date:** {source['date']}\n"
             citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
-            if source.get('url'):
-                citations += f"   - **Link:** [View Paper]({source['url']})\n"
             citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
     
     # Format AI Tech articles
@@ -254,12 +250,7 @@ def format_sources(sources: list) -> str:
         citations += "### 🚀 AI Tech Articles\n\n"
         for i, source in enumerate(articles, 1):
             citations += f"**{i}.** {source['title']}\n"
-            citations += f"   - **Author:** {source['author']}\n"
-            citations += f"   - **Source:** {source['source']}\n"
-            citations += f"   - **Date:** {source['date']}\n"
             citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
-            if source.get('url'):
-                citations += f"   - **Link:** [View Article]({source['url']})\n"
             citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
     
     citations += "---\n*These sources were retrieved using semantic search through multiple databases.*"
@@ -396,7 +387,7 @@ def intelligent_search(query: str) -> dict:
                             paper_id = match["metadata"].get("paper_id", "Unknown ID")
                             url = match["metadata"].get("url", "")
                             
-                            if score > 0.5:  # Threshold for relevance (lowered from 0.7 for testing)
+                            if score > 0.3:  # Threshold for relevance (lowered from 0.7 for testing)
                                 logger.info(f"Database1 match {i+1} PASSED threshold: {title}")
                                 # Don't include raw text in main response, only in sources
                                 db1_content += f"[Score: {score:.2f}] {title} by {authors} ({date})\n---\n"
