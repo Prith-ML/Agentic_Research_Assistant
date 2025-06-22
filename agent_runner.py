@@ -331,143 +331,75 @@ def format_sources(sources: list) -> str:
 
 def summarize_papers(query: str) -> str:
     """
-    Get a comprehensive summary of papers related to a topic.
-    
-    This function explicitly:
-    1. Searches for relevant research papers using semantic search
-    2. Analyzes the papers to extract key information
-    3. Provides a structured summary with specific sections
-    4. Includes proper citations and source information
-    
-    Args:
-        query (str): The research topic to summarize
-        
-    Returns:
-        str: A comprehensive, structured summary with sources
+    Get a summary of papers related to a topic.
     """
     try:
-        logger.info(f"Starting comprehensive paper summary for: {query}")
-        
         # Get papers first
         search_result = search_databases(query)
         if search_result["paper_count"] == 0:
-            return f"**No papers found for '{query}'**\n\nI couldn't find any relevant research papers in the database for this topic. Please try rephrasing your query or using different keywords."
+            return f"No papers found for {query}"
         
-        logger.info(f"Found {search_result['paper_count']} papers for summary")
-        
-        # Create a more explicit and structured summary prompt
+        # Simple summary prompt
         summary_prompt = f"""
-        You are creating a comprehensive research summary. Based on the following research papers, provide a detailed, structured summary of the current state of research on: **{query}**
-
-        **Research Papers Found:**
+        Based on the following research papers, provide a comprehensive summary of: {query}
+        
+        Papers:
         {search_result["content"]}
-
-        **Required Summary Structure:**
         
-        ## 📋 **Research Summary: {query}**
-        
-        ### 🔍 **Key Findings & Trends**
-        - Summarize the main discoveries and patterns across the papers
-        - Highlight consistent findings and emerging trends
-        
-        ### 🛠️ **Methodologies & Approaches**
-        - Describe the main research methods used
-        - Compare different approaches and techniques
-        
-        ### ⚠️ **Current Challenges & Limitations**
-        - Identify common problems and constraints
-        - Discuss gaps in current research
-        
-        **Important:** Make this summary comprehensive and academic-quality. Include specific details from the papers and maintain a scholarly tone.
+        Please provide:
+        1. Key findings and trends
+        2. Main methodologies used
+        3. Current challenges and limitations
+        4. Future research directions
         """
         
-        logger.info("Generating structured summary with LLM")
         response = llm.invoke(summary_prompt)
         summary = str(response.content)
         
-        # Add explicit source information
+        # Add sources to the summary
         sources_section = format_sources(search_result["sources"])
-        
-        # Add a clear header indicating this is a summary
-        final_summary = f"## 📚 **COMPREHENSIVE RESEARCH SUMMARY**\n\n{summary}\n{sources_section}"
-        
-        logger.info("Summary completed successfully")
-        return final_summary
+        return summary + sources_section
         
     except Exception as e:
         logger.error(f"Error in summarize_papers: {e}")
-        return f"**Error creating summary:** I encountered an issue while generating the research summary: {str(e)}"
+        return f"Error summarizing papers: {str(e)}"
 
 def analyze_trends(topic: str) -> str:
     """
     Analyze trends in a specific research area.
-    
-    This function explicitly:
-    1. Searches for recent research papers and developments using semantic search
-    2. Analyzes temporal patterns and emerging directions in the field
-    3. Provides a structured trend analysis with specific insights
-    4. Includes proper citations and source information
-    
-    Args:
-        topic (str): The research area to analyze for trends
-        
-    Returns:
-        str: A comprehensive, structured trend analysis with sources
     """
     try:
-        logger.info(f"Starting trend analysis for: {topic}")
-        
-        # Search for recent papers with enhanced query
-        recent_query = f"latest developments {topic} 2024 2023 recent advances"
+        # Search for recent papers
+        recent_query = f"latest developments {topic} 2024 2023"
         search_result = search_databases(recent_query)
         
         if search_result["paper_count"] == 0:
-            return f"**No recent papers found for '{topic}'**\n\nI couldn't find any recent research papers or developments in the database for this topic. Please try rephrasing your query or using different keywords."
+            return f"No recent papers found for {topic}"
         
-        logger.info(f"Found {search_result['paper_count']} papers for trend analysis")
-        
-        # Create a more explicit and structured trend analysis prompt
+        # Simple trend analysis prompt
         trend_prompt = f"""
-        You are conducting a comprehensive trend analysis. Based on the following recent research papers, provide a detailed analysis of emerging trends and developments in: **{topic}**
-
-        **Recent Research Papers Found:**
+        Analyze the following recent papers to identify trends in {topic}:
+        
         {search_result["content"]}
-
-        **Required Trend Analysis Structure:**
         
-        ## 📈 **Trend Analysis: {topic}**
-        
-        ### 🚀 **Emerging Trends & Patterns**
-        - Identify new directions and patterns emerging in the field
-        - Highlight consistent themes across recent research
-        
-        ### 🔬 **New Methodologies & Approaches**
-        - Describe innovative methods being adopted
-        - Compare traditional vs. emerging techniques
-
-        ### 💡 **Key Breakthroughs & Innovations**
-        - Highlight significant recent discoveries
-        - Identify game-changing developments
-        
-        **Important:** Focus on temporal patterns and recent developments. Make this analysis forward-looking and identify what's driving current research directions.
+        Please identify:
+        1. Emerging trends and patterns
+        2. New methodologies being adopted
+        3. Shifts in research focus
+        4. Key breakthroughs or innovations
+        5. Areas gaining more attention
         """
         
-        logger.info("Generating structured trend analysis with LLM")
         response = llm.invoke(trend_prompt)
         analysis = str(response.content)
         
-        # Add explicit source information
+        # Add sources to the analysis
         sources_section = format_sources(search_result["sources"])
-        
-        # Add a clear header indicating this is a trend analysis
-        final_analysis = f"## 📊 **TREND ANALYSIS REPORT**\n\n{analysis}\n{sources_section}"
-        
-        logger.info("Trend analysis completed successfully")
-        return final_analysis
+        return analysis + sources_section
         
     except Exception as e:
         logger.error(f"Error in analyze_trends: {e}")
-        return f"**Error creating trend analysis:** I encountered an issue while analyzing trends: {str(e)}"
+        return f"Error analyzing trends: {str(e)}"
 
 # Register enhanced tools for the agent
 tools = [
@@ -685,9 +617,36 @@ def chat(query: str) -> str:
             try:
                 if "intermediate_steps" in out:
                     for step in out["intermediate_steps"]:
+                        logger.info(f"Agent used tool: {step[0].tool}")
+                        
+                        # Check for search_databases tool
                         if step[0].tool == "search_databases" and last_search_result and last_search_result["sources"]:
                             sources_section = format_sources(last_search_result["sources"])
                             break
+                        
+                        # Check for summarize_papers tool - extract sources from the response
+                        elif step[0].tool == "summarize_papers":
+                            logger.info("Agent used summarize_papers tool")
+                            # The summarize_papers function already includes sources in its response
+                            # We need to extract them from the agent's output
+                            agent_output = step[1] if len(step) > 1 else ""
+                            if "## 📚 Sources & References" in agent_output:
+                                # Extract the sources section from the agent's response
+                                sources_start = agent_output.find("## 📚 Sources & References")
+                                sources_section = agent_output[sources_start:]
+                                break
+                        
+                        # Check for analyze_trends tool - extract sources from the response
+                        elif step[0].tool == "analyze_trends":
+                            logger.info("Agent used analyze_trends tool")
+                            # The analyze_trends function already includes sources in its response
+                            agent_output = step[1] if len(step) > 1 else ""
+                            if "## 📚 Sources & References" in agent_output:
+                                # Extract the sources section from the agent's response
+                                sources_start = agent_output.find("## 📚 Sources & References")
+                                sources_section = agent_output[sources_start:]
+                                break
+                            
             except Exception as e:
                 logger.warning(f"Could not extract sources from agent: {e}")
             
