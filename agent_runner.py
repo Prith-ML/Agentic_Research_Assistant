@@ -112,15 +112,15 @@ def classify_database(query: str) -> str:
         logger.error(f"LLM classification failed: {e}, defaulting to ragas")
         return "ragas"
 
-def arxiv_search(query: str) -> dict:
+def search_databases(query: str) -> dict:
     """
-    Enhanced search through arXiv papers using vector similarity with database routing.
+    Enhanced search through research papers and tech articles using vector similarity with intelligent database routing.
     
     Args:
         query (str): The search query
         
     Returns:
-        dict: Dictionary containing search results and source information
+        dict: Dictionary containing search results and source information from either research papers or tech articles
     """
     try:
         logger.info(f"Searching for: {query}")
@@ -198,7 +198,7 @@ def arxiv_search(query: str) -> dict:
         }
         
     except Exception as e:
-        logger.error(f"Error in arxiv_search: {e}")
+        logger.error(f"Error in search_databases: {e}")
         return {
             "content": f"Error searching content: {str(e)}",
             "sources": [],
@@ -276,21 +276,13 @@ def format_sources(sources: list) -> str:
     
     return citations
 
-def semantic_search(query: str, context: str = "") -> dict:
-    """
-    Semantic search that considers conversation context.
-    """
-    # Combine query with context for better search
-    enhanced_query = f"{query} {context}".strip()
-    return arxiv_search(enhanced_query)
-
 def summarize_papers(query: str) -> str:
     """
     Get a comprehensive summary of papers related to a topic.
     """
     try:
         # Get papers first
-        search_result = arxiv_search(query)
+        search_result = search_databases(query)
         if search_result["paper_count"] == 0:
             return search_result["content"]
         
@@ -326,7 +318,7 @@ def analyze_trends(topic: str) -> str:
     try:
         # Search for recent papers
         recent_query = f"latest developments {topic} 2024 2023"
-        search_result = arxiv_search(recent_query)
+        search_result = search_databases(recent_query)
         
         if search_result["paper_count"] == 0:
             return f"No recent papers found for {topic}"
@@ -359,9 +351,9 @@ def analyze_trends(topic: str) -> str:
 # Register enhanced tools for the agent
 tools = [
     Tool.from_function(
-        func=lambda query: arxiv_search(query)["content"],  # Extract content for tool
-        name="arxiv_search",
-        description="Use this tool to answer questions about AI, ML, or arXiv papers. "
+        func=lambda query: search_databases(query)["content"],  # Extract content for tool
+        name="search_databases",
+        description="Use this tool to answer questions about AI, ML, or research papers. "
                    "This tool searches through a curated dataset of scientific papers "
                    "and returns relevant excerpts to help answer research questions."
     ),
@@ -407,7 +399,12 @@ try:
             "chat_history": lambda x: x.get("chat_history", ""),
             "agent_scratchpad": lambda x: convert_intermediate_steps(x.get("intermediate_steps", [])),
         }
-        | prompt.partial(tools=convert_tools(tools))
+        | prompt.partial(
+            tools=convert_tools(tools),
+            system_message="When answering questions about AI, ML, research, or technical topics, "
+                          "PREFER using the search tools to get the most accurate and current information. "
+                          "You can still use your knowledge for basic definitions or general concepts."
+        )
         | llm.bind(stop=["</tool_input>", "</final_answer>"])
         | XMLAgentOutputParser()
     )
@@ -547,15 +544,15 @@ def chat(query: str) -> str:
         # Try to get sources from the search results
         sources_section = ""
         try:
-            # If the agent used arxiv_search, we can extract sources
+            # If the agent used search_databases, we can extract sources
             if "intermediate_steps" in out:
                 logger.info(f"Found {len(out['intermediate_steps'])} intermediate steps")
                 for step in out["intermediate_steps"]:
                     logger.info(f"Step tool: {step[0].tool}")
-                    if step[0].tool == "arxiv_search":
-                        logger.info(f"Found arxiv_search step with input: {step[0].tool_input}")
+                    if step[0].tool == "search_databases":
+                        logger.info(f"Found search_databases step with input: {step[0].tool_input}")
                         # Extract sources from the search
-                        search_result = arxiv_search(step[0].tool_input)
+                        search_result = search_databases(step[0].tool_input)
                         if search_result["sources"]:
                             logger.info(f"Found {len(search_result['sources'])} sources")
                             sources_section = format_sources(search_result["sources"])
@@ -568,7 +565,7 @@ def chat(query: str) -> str:
             # If no sources found from agent steps, try direct search
             if not sources_section:
                 logger.info("Trying direct search for sources")
-                direct_search = arxiv_search(query)
+                direct_search = search_databases(query)
                 if direct_search["sources"]:
                     logger.info(f"Direct search found {len(direct_search['sources'])} sources")
                     sources_section = format_sources(direct_search["sources"])
@@ -577,7 +574,7 @@ def chat(query: str) -> str:
             logger.warning(f"Could not extract sources: {e}")
             # Try direct search as fallback
             try:
-                direct_search = arxiv_search(query)
+                direct_search = search_databases(query)
                 if direct_search["sources"]:
                     sources_section = format_sources(direct_search["sources"])
             except Exception as fallback_error:
@@ -680,7 +677,7 @@ def test_source_extraction():
     logger.info(f"Testing source extraction with query: {test_query}")
     
     # Test direct search
-    search_result = arxiv_search(test_query)
+    search_result = search_databases(test_query)
     logger.info(f"Search result: {search_result['paper_count']} papers found")
     
     if search_result["sources"]:
