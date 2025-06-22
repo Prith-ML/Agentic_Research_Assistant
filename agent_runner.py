@@ -2,7 +2,6 @@
 # coding: utf-8
 
 import streamlit as st
-import time
 from dotenv import load_dotenv
 from langchain.agents import Tool, AgentExecutor
 from langchain.agents.output_parsers.xml import XMLAgentOutputParser
@@ -11,101 +10,69 @@ from langchain_aws.embeddings import BedrockEmbeddings
 from langchain_anthropic import ChatAnthropic
 from pinecone import Pinecone
 import logging
-from datetime import datetime
-import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables (for local development)
+# Load environment variables
 try:
     load_dotenv()
 except:
     pass
 
 # Get API keys from Streamlit secrets
-try:
-    CLAUDE_API_KEY = st.secrets["CLAUDE_API_KEY"]
-    PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
-except Exception as e:
-    logger.error(f"Failed to load secrets: {e}")
-    raise
-
-# Validate API keys
-assert CLAUDE_API_KEY is not None, "Claude API key missing."
-assert PINECONE_API_KEY is not None, "Pinecone API key missing."
+CLAUDE_API_KEY = st.secrets["CLAUDE_API_KEY"]
+PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
 
 # Initialize LLM
-try:
-    llm = ChatAnthropic(
-        model_name="claude-3-5-haiku-20241022",
-        temperature=0.2,
-        anthropic_api_key=CLAUDE_API_KEY
-    )
-    logger.info("LLM initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize LLM: {e}")
-    raise
+llm = ChatAnthropic(
+    model_name="claude-3-5-haiku-20241022",
+    temperature=0.2,
+    api_key=CLAUDE_API_KEY
+)
 
 # Initialize embeddings
-try:
-    embed = BedrockEmbeddings(
-        model_id="cohere.embed-english-v3",
-        region_name="us-east-1"
-    )
-    logger.info("Embeddings initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize embeddings: {e}")
-    raise
+embed = BedrockEmbeddings(
+    model_id="cohere.embed-english-v3",
+    region_name="us-east-1"
+)
 
 # Initialize Pinecone
-try:
-    pc = Pinecone(api_key=PINECONE_API_KEY)
-    index = pc.Index("database1")  # arXiv research papers
-    index1 = pc.Index("database2")  # AI tech articles
-    logger.info("Pinecone initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize Pinecone: {e}")
-    raise
+pc = Pinecone(api_key=PINECONE_API_KEY)
+index = pc.Index("database1")  # arXiv research papers
+index1 = pc.Index("database2")  # AI tech articles
 
 # Global variables for storing search results
 last_search_result = None
 
 def search_databases_wrapper(query: str) -> str:
-    """
-    Wrapper function for search_databases that stores the result globally.
-    This allows us to access sources later without re-running the search.
-    """
+    """Wrapper function for search_databases that stores the result globally."""
     global last_search_result
     result = search_databases(query)
-    last_search_result = result  # Store for later use
+    last_search_result = result
     return result["content"]
 
 def classify_database(query: str) -> str:
-    """
-    Use LLM to intelligently classify which database to search based on the user's query.
-    
-    Args:
-        query (str): The search query
-        
-    Returns:
-        str: Database name to search ("database1" or "database2")
-    """
+    """Use LLM to intelligently classify which database to search based on the user's query."""
     classification_prompt = f"""
     Analyze this query and determine which database would be most appropriate to search:
 
     Query: "{query}"
 
     Available databases:
-    - database1: Contains academic research papers from arXiv (scientific studies, theoretical work, methodology, mathematical analysis, research findings)
-    - database2: Contains AI tech articles, news, industry updates, company announcements, product releases, market trends, current developments
+    - database1: Contains academic research papers from arXiv (scientific studies, theoretical work, methodology, mathematical analysis, research findings, algorithms, models, techniques, academic research)
+    - database2: Contains AI tech articles, news, industry updates, company announcements, product releases, market trends, current developments, business news, company information, industry insights
 
-    Consider:
-    - Is the user asking about academic research or industry news?
-    - Are they looking for scientific papers or current developments?
-    - Do they want theoretical analysis or practical updates?
-    - Is this about research methodology or business/technology news?
+    Guidelines for classification:
+    - Choose database1 for: academic research, scientific papers, algorithms, methodologies, theoretical concepts, mathematical analysis, research findings, technical implementations
+    - Choose database2 for: company news, industry updates, product announcements, business developments, market trends, current events, company information, industry insights
+
+    Consider the user's intent:
+    - Are they asking about academic/scientific research? → database1
+    - Are they asking about industry/business news? → database2
+    - Are they looking for technical implementation details? → database1
+    - Are they looking for company/product information? → database2
 
     Respond with exactly one word: database1 or database2
     """
@@ -114,9 +81,9 @@ def classify_database(query: str) -> str:
         response = llm.invoke(classification_prompt)
         database_choice = response.content.strip().upper()
         
-        # Validate response
         if database_choice in ["database1", "database2"]:
-            logger.info(f"LLM selected database: {database_choice.lower()} for query: {query}")
+            database_name = "arXiv Research Papers" if database_choice == "database1" else "AI Tech Articles"
+            logger.info(f"Query: '{query}' → Selected: {database_choice} ({database_name})")
             return database_choice.lower()
         else:
             logger.warning(f"Invalid LLM response: {database_choice}, defaulting to database1")
@@ -127,21 +94,10 @@ def classify_database(query: str) -> str:
         return "database1"
 
 def search_databases(query: str) -> dict:
-    """
-    Enhanced search through research papers and tech articles using vector similarity with intelligent database routing.
-    
-    Args:
-        query (str): The search query
-        
-    Returns:
-        dict: Dictionary containing search results and source information from either research papers or tech articles
-    """
+    """Enhanced search through research papers and tech articles using vector similarity with intelligent database routing."""
     try:
-        logger.info(f"Searching for: {query}")
-        
         # Determine which database to search
         database_choice = classify_database(query)
-        logger.info(f"Selected database: {database_choice}")
         
         # Select the appropriate index
         search_index = index1 if database_choice == "database2" else index
@@ -151,7 +107,7 @@ def search_databases(query: str) -> dict:
         # Enhanced query with better parameters
         out = search_index.query(
             vector=xq, 
-            top_k=8,  # Increased for better coverage
+            top_k=8,
             include_metadata=True,
             include_values=False
         )
@@ -180,41 +136,11 @@ def search_databases(query: str) -> dict:
                 
                 # Only include high-quality matches
                 if score > 0.7:  # Threshold for relevance
-                    # Clean the text content to remove paper headers and formatting
+                    # Use the raw text content directly
                     raw_text = match["metadata"]["text"]
                     
-                    # Remove common paper section headers more aggressively
-                    cleaned_text = raw_text
-                    headers_to_remove = [
-                        "Abstract", "ABSTRACT", "Introduction", "INTRODUCTION",
-                        "Abstract:", "ABSTRACT:", "Introduction:", "INTRODUCTION:",
-                        "1. Introduction", "1. INTRODUCTION", "1 Introduction", "1 INTRODUCTION",
-                        "2. Related Work", "2. RELATED WORK", "2 Related Work", "2 RELATED WORK",
-                        "3. Methodology", "3. METHODOLOGY", "3 Methodology", "3 METHODOLOGY",
-                        "4. Results", "4. RESULTS", "4 Results", "4 RESULTS",
-                        "5. Conclusion", "5. CONCLUSION", "5 Conclusion", "5 CONCLUSION",
-                        "Abstract\n", "ABSTRACT\n", "Introduction\n", "INTRODUCTION\n",
-                        "Abstract:\n", "ABSTRACT:\n", "Introduction:\n", "INTRODUCTION:\n"
-                    ]
-                    
-                    # More aggressive cleaning - remove headers and everything before them
-                    for header in headers_to_remove:
-                        if header in cleaned_text:
-                            # Split and take everything after the header
-                            parts = cleaned_text.split(header, 1)
-                            if len(parts) > 1:
-                                cleaned_text = parts[1].strip()
-                    
-                    # Remove any remaining section numbers and headers
-                    # Remove lines that are just section headers (like "1. Introduction")
-                    cleaned_text = re.sub(r'^\d+\.\s*[A-Z][a-z\s]+$', '', cleaned_text, flags=re.MULTILINE)
-                    # Remove bold headers (like **Abstract**)
-                    cleaned_text = re.sub(r'\*\*[A-Za-z\s]+\*\*', '', cleaned_text)
-                    # Remove standalone headers
-                    cleaned_text = re.sub(r'^[A-Z][A-Z\s]+$', '', cleaned_text, flags=re.MULTILINE)
-                    
-                    # Clean up extra whitespace and formatting
-                    cleaned_text = " ".join(cleaned_text.split())  # Normalize whitespace
+                    # Simple text cleaning - just normalize whitespace
+                    cleaned_text = " ".join(raw_text.split())
                     
                     # Limit excerpt length for display
                     display_text = cleaned_text[:500] + "..." if len(cleaned_text) > 500 else cleaned_text
@@ -222,7 +148,7 @@ def search_databases(query: str) -> dict:
                     result_text = f"[Score: {score:.2f}] {title} by {authors} ({date})\n{display_text}"
                     results.append(result_text)
                     
-                    # Add source information (keep original text for excerpt)
+                    # Add source information
                     source_info = {
                         "title": title,
                         "authors": authors,
@@ -230,7 +156,7 @@ def search_databases(query: str) -> dict:
                         "paper_id": paper_id,
                         "url": url,
                         "relevance_score": score,
-                        "excerpt": match["metadata"]["text"][:200] + "..." if len(match["metadata"]["text"]) > 200 else match["metadata"]["text"],
+                        "excerpt": raw_text[:200] + "..." if len(raw_text) > 200 else raw_text,
                         "database": database_choice
                     }
                     sources.append(source_info)
@@ -244,8 +170,8 @@ def search_databases(query: str) -> dict:
             }
         
         return {
-            "content": "\n---\n".join(results[:5]),  # Return top 5 most relevant
-            "sources": sources[:5],  # Top 5 sources
+            "content": "\n---\n".join(results[:5]),
+            "sources": sources[:5],
             "paper_count": len(sources),
             "database_used": database_choice
         }
@@ -260,79 +186,44 @@ def search_databases(query: str) -> dict:
         }
 
 def format_sources(sources: list) -> str:
-    """
-    Format sources into a nice citation format.
-    
-    Args:
-        sources (list): List of source dictionaries
-        
-    Returns:
-        str: Formatted citations
-    """
+    """Format sources into a nice citation format."""
     if not sources:
         return ""
     
-    # Group sources by database
-    database1_sources = [s for s in sources if s.get('database') == 'database1']
-    database2_sources = [s for s in sources if s.get('database') == 'database2']
+    # Get the database type from the first source (all sources will be from the same database)
+    database_used = sources[0].get('database', 'unknown') if sources else 'unknown'
     
     citations = "\n\n## 📚 Sources & References\n\n"
     
     # Determine content type based on database
-    if database1_sources and database2_sources:
-        citations += f"*Based on analysis of {len(database1_sources)} research papers and {len(database2_sources)} tech articles:*\n\n"
-    elif database1_sources:
-        citations += f"*Based on analysis of {len(database1_sources)} research papers:*\n\n"
-    elif database2_sources:
-        citations += f"*Based on analysis of {len(database2_sources)} tech articles:*\n\n"
+    if database_used == "database1":
+        citations += f"*Based on analysis of {len(sources)} research papers from arXiv:*\n\n"
+        link_text = "View Paper"
+        footer_text = "These sources were retrieved using semantic search through arXiv research papers."
+    elif database_used == "database2":
+        citations += f"*Based on analysis of {len(sources)} tech articles:*\n\n"
+        link_text = "View Article"
+        footer_text = "These sources were retrieved using semantic search through AI tech articles."
     else:
         citations += f"*Based on analysis of {len(sources)} sources:*\n\n"
+        link_text = "View Source"
+        footer_text = "These sources were retrieved using semantic search."
     
-    # Add database information if using multiple databases
-    if database1_sources and database2_sources:
-        citations += "**📄 Research Papers (arXiv):**\n"
-        for i, source in enumerate(database1_sources, 1):
-            citations += f"**{i}.** {source['title']}\n"
-            citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
-            if source.get('url'):
-                citations += f"   - **Link:** [View Paper]({source['url']})\n"
-            citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
-        
-        citations += "**📰 Tech Articles:**\n"
-        for i, source in enumerate(database2_sources, 1):
-            citations += f"**{i}.** {source['title']}\n"
-            citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
-            if source.get('url'):
-                citations += f"   - **Link:** [View Article]({source['url']})\n"
-            citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
-    else:
-        # Single database format
-        database_type = "research papers" if database1_sources else "tech articles"
-        link_text = "View Paper" if database1_sources else "View Article"
-        
-        for i, source in enumerate(sources, 1):
-            citations += f"**{i}.** {source['title']}\n"
-            citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
-            if source.get('url'):
-                citations += f"   - **Link:** [{link_text}]({source['url']})\n"
-            citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
+    # Format all sources
+    for i, source in enumerate(sources, 1):
+        citations += f"**{i}.** {source['title']}\n"
+        citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
+        if source.get('url'):
+            citations += f"   - **Link:** [{link_text}]({source['url']})\n"
+        citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
     
-    # Add appropriate footer based on database used
-    if database1_sources and database2_sources:
-        citations += "---\n*These sources were retrieved using semantic search through arXiv research papers and AI tech articles.*"
-    elif database1_sources:
-        citations += "---\n*These sources were retrieved using semantic search through arXiv research papers.*"
-    elif database2_sources:
-        citations += "---\n*These sources were retrieved using semantic search through AI tech articles.*"
-    else:
-        citations += "---\n*These sources were retrieved using semantic search.*"
+    # Add footer
+    citations += f"---\n*{footer_text}*"
     
     return citations
 
 def summarize_papers(query: str) -> str:
-    """
-    Get a summary of papers related to a topic.
-    """
+    """Get a summary of papers related to a topic."""
     try:
         # Get papers first
         search_result = search_databases(query)
@@ -365,9 +256,7 @@ def summarize_papers(query: str) -> str:
         return f"Error summarizing papers: {str(e)}"
 
 def analyze_trends(topic: str) -> str:
-    """
-    Analyze trends in a specific research area.
-    """
+    """Analyze trends in a specific research area."""
     try:
         # Search for recent papers
         recent_query = f"latest developments {topic} 2024 2023"
@@ -401,10 +290,10 @@ def analyze_trends(topic: str) -> str:
         logger.error(f"Error in analyze_trends: {e}")
         return f"Error analyzing trends: {str(e)}"
 
-# Register enhanced tools for the agent
+# Register tools for the agent
 tools = [
     Tool.from_function(
-        func=search_databases_wrapper,  # Use wrapper instead of lambda
+        func=search_databases_wrapper,
         name="search_databases",
         description="Use this tool for ANY question about AI companies, industry developments, product announcements, company research, current AI news, AI models, AI developments, or any specific AI-related information. "
                    "This tool searches through a curated dataset of scientific papers and tech articles "
@@ -427,12 +316,7 @@ tools = [
 ]
 
 # Load XML agent prompt
-try:
-    prompt = hub.pull("hwchase17/xml-agent-convo")
-    logger.info("Agent prompt loaded successfully")
-except Exception as e:
-    logger.error(f"Failed to load agent prompt: {e}")
-    raise
+prompt = hub.pull("hwchase17/xml-agent-convo")
 
 def convert_intermediate_steps(intermediate_steps):
     """Convert intermediate steps to XML format for the agent."""
@@ -447,40 +331,35 @@ def convert_tools(tools):
     return "\n".join([f"{tool.name}: {tool.description}" for tool in tools])
 
 # Initialize agent
-try:
-    agent = (
-        {
-            "input": lambda x: x["input"],
-            "chat_history": lambda x: x.get("chat_history", ""),
-            "agent_scratchpad": lambda x: convert_intermediate_steps(x.get("intermediate_steps", [])),
-        }
-        | prompt.partial(
-            tools=convert_tools(tools),
-            system_message="CRITICAL: For questions about AI companies, industry developments, current AI news, product announcements, company research, or any specific AI-related information, you MUST use the search tools to get current and accurate information. "
-                          "For questions about AI models, AI developments, or any AI topic that might have recent updates, ALWAYS search the database first. "
-                          "Use search_databases for company information and current developments, summarize_papers for research summaries, or analyze_trends for trend analysis. "
-                          "Only use your knowledge for basic definitions that don't require current information. "
-                          "This is a research assistant - your primary job is to search databases and provide sourced information."
-        )
-        | llm.bind(stop=["</tool_input>", "</final_answer>"])
-        | XMLAgentOutputParser()
+agent = (
+    {
+        "input": lambda x: x["input"],
+        "chat_history": lambda x: x.get("chat_history", ""),
+        "agent_scratchpad": lambda x: convert_intermediate_steps(x.get("intermediate_steps", [])),
+    }
+    | prompt.partial(
+        tools=convert_tools(tools),
+        system_message="CRITICAL: For questions about AI companies, industry developments, current AI news, product announcements, company research, or any specific AI-related information, you MUST use the search tools to get current and accurate information. "
+                      "For questions about AI models, AI developments, or any AI topic that might have recent updates, ALWAYS search the database first. "
+                      "Use search_databases for company information and current developments, summarize_papers for research summaries, or analyze_trends for trend analysis. "
+                      "Only use your knowledge for basic definitions that don't require current information. "
+                      "This is a research assistant - your primary job is to search databases and provide sourced information."
     )
-    
-    agent_executor = AgentExecutor(
-        agent=agent, 
-        tools=tools, 
-        return_intermediate_steps=True, 
-        verbose=True
-    )
-    logger.info("Agent initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize agent: {e}")
-    raise
+    | llm.bind(stop=["</tool_input>", "</final_answer>"])
+    | XMLAgentOutputParser()
+)
 
-# Global chat history and cache with better memory management
+agent_executor = AgentExecutor(
+    agent=agent, 
+    tools=tools, 
+    return_intermediate_steps=True, 
+    verbose=True
+)
+
+# Global chat history and cache
 chat_history = []
 response_cache = {}
-MAX_HISTORY_EXCHANGES = 6  # 3 exchanges (6 messages: 3 human + 3 assistant)
+MAX_HISTORY_EXCHANGES = 6
 MAX_CACHE_SIZE = 100
 CACHE_CLEANUP_SIZE = 20
 
@@ -496,15 +375,7 @@ QUERY_ENHANCEMENTS = {
 }
 
 def classify_query_type(query: str) -> str:
-    """
-    Classify query type for optimal prompt selection.
-    
-    Args:
-        query (str): The user's question
-        
-    Returns:
-        str: Query type classification
-    """
+    """Classify query type for optimal prompt selection."""
     query_lower = query.lower()
     
     # Check for company/industry queries (should trigger database search)
@@ -536,44 +407,23 @@ def classify_query_type(query: str) -> str:
         return "general"
 
 def enhance_query(query: str, query_type: str | None = None) -> str:
-    """
-    Enhance user queries with research-specific context.
-    
-    Args:
-        query (str): The original user query
-        query_type (str | None): The classified query type (auto-detected if None)
-        
-    Returns:
-        str: Enhanced query with research context
-    """
+    """Enhance user queries with research-specific context."""
     if query_type is None:
         query_type = classify_query_type(query)
     
     enhancement = QUERY_ENHANCEMENTS.get(query_type, QUERY_ENHANCEMENTS["general"])
     enhanced_query = f"{query} {enhancement}"
     
-    logger.info(f"Query enhanced: '{query}' -> Type: {query_type}")
     return enhanced_query
 
 def chat(query: str) -> str:
-    """
-    Enhanced chat function that respects agent's tool choice and uses database as fallback.
-    
-    Args:
-        query (str): The user's question
-        
-    Returns:
-        str: The AI assistant's response with sources
-    """
+    """Enhanced chat function that respects agent's tool choice and uses database as fallback."""
     global chat_history, response_cache
     
     try:
-        logger.info(f"Processing query: {query}")
-        
         # Check cache for similar queries
         cache_key = query.lower().strip()
         if cache_key in response_cache:
-            logger.info("Returning cached response")
             return response_cache[cache_key]
         
         # Enhance the query for better results
@@ -595,7 +445,6 @@ def chat(query: str) -> str:
         try:
             if "intermediate_steps" in out:
                 for step in out["intermediate_steps"]:
-                    logger.info(f"Agent used tool: {step[0].tool}")
                     agent_used_tools = True
                     
                     # Check for search_databases tool
@@ -605,22 +454,16 @@ def chat(query: str) -> str:
                     
                     # Check for summarize_papers tool - extract sources from the response
                     elif step[0].tool == "summarize_papers":
-                        logger.info("Agent used summarize_papers tool")
-                        # The summarize_papers function already includes sources in its response
                         agent_output = step[1] if len(step) > 1 else ""
                         if "## 📚 Sources & References" in agent_output:
-                            # Extract the sources section from the agent's response
                             sources_start = agent_output.find("## 📚 Sources & References")
                             sources_section = agent_output[sources_start:]
                             break
                     
                     # Check for analyze_trends tool - extract sources from the response
                     elif step[0].tool == "analyze_trends":
-                        logger.info("Agent used analyze_trends tool")
-                        # The analyze_trends function already includes sources in its response
                         agent_output = step[1] if len(step) > 1 else ""
                         if "## 📚 Sources & References" in agent_output:
-                            # Extract the sources section from the agent's response
                             sources_start = agent_output.find("## 📚 Sources & References")
                             sources_section = agent_output[sources_start:]
                             break
@@ -630,18 +473,24 @@ def chat(query: str) -> str:
         
         # If agent didn't use tools, try database search as fallback
         if not agent_used_tools:
-            logger.info("Agent didn't use tools, trying database search as fallback")
             search_result = search_databases(query)
             if search_result["paper_count"] > 0:
-                logger.info(f"Fallback search found {search_result['paper_count']} sources")
                 sources_section = format_sources(search_result["sources"])
-                # Replace agent's short answer with database content + sources
                 full_response = search_result["content"] + sources_section
             else:
                 full_response = agent_answer
         else:
-            # Agent used tools, use its response
-            full_response = agent_answer
+            # Agent used tools, check if we need to add sources
+            if not sources_section and "## 📚 Sources & References" not in agent_answer:
+                search_result = search_databases(query)
+                if search_result["paper_count"] > 0:
+                    sources_section = format_sources(search_result["sources"])
+                    full_response = agent_answer + sources_section
+                else:
+                    full_response = agent_answer
+            else:
+                # Agent used tools and sources are already included
+                full_response = agent_answer
         
         # Cache the response
         response_cache[cache_key] = full_response
@@ -655,8 +504,7 @@ def chat(query: str) -> str:
         # Update chat history
         exchange = {
             "human": query,
-            "assistant": agent_answer,  # Store agent response without sources
-            "timestamp": datetime.now(),
+            "assistant": agent_answer,
             "query_type": query_type
         }
         chat_history.append(exchange)
@@ -664,7 +512,6 @@ def chat(query: str) -> str:
         if len(chat_history) > MAX_HISTORY_EXCHANGES:
             chat_history = chat_history[-MAX_HISTORY_EXCHANGES:]
         
-        logger.info(f"Query processed successfully. Type: {query_type}, Agent used tools: {agent_used_tools}")
         return full_response
         
     except Exception as e:
@@ -676,72 +523,8 @@ def clear_cache():
     """Clear the response cache."""
     global response_cache
     response_cache.clear()
-    logger.info("Response cache cleared")
 
 def clear_history():
     """Clear the chat history."""
     global chat_history
     chat_history.clear()
-    logger.info("Chat history cleared")
-
-def get_chat_stats():
-    """Get statistics about the chat session."""
-    global chat_history, response_cache
-    return {
-        "cache_size": len(response_cache),
-        "history_exchanges": len(chat_history),
-        "memory_usage_mb": estimate_memory_usage(),
-        "avg_exchange_length": calculate_avg_exchange_length()
-    }
-
-def estimate_memory_usage():
-    """Estimate memory usage in MB."""
-    import sys
-    
-    # Estimate memory for chat history
-    history_memory = sum(
-        sys.getsizeof(exchange["human"]) + sys.getsizeof(exchange["assistant"])
-        for exchange in chat_history
-    )
-    
-    # Estimate memory for cache
-    cache_memory = sum(
-        sys.getsizeof(key) + sys.getsizeof(value)
-        for key, value in response_cache.items()
-    )
-    
-    total_memory = history_memory + cache_memory
-    return round(total_memory / (1024 * 1024), 2)  # Convert to MB
-
-def calculate_avg_exchange_length():
-    """Calculate average length of exchanges."""
-    if not chat_history:
-        return 0
-    
-    total_length = sum(
-        len(exchange["human"]) + len(exchange["assistant"])
-        for exchange in chat_history
-    )
-    return round(total_length / len(chat_history), 0)
-
-def test_source_extraction():
-    """Test function to verify source extraction is working."""
-    test_query = "What are transformer architectures?"
-    logger.info(f"Testing source extraction with query: {test_query}")
-    
-    # Test direct search
-    search_result = search_databases(test_query)
-    logger.info(f"Search result: {search_result['paper_count']} papers found")
-    
-    if search_result["sources"]:
-        logger.info(f"Sources found: {len(search_result['sources'])}")
-        for i, source in enumerate(search_result["sources"][:2]):  # Show first 2
-            logger.info(f"Source {i+1}: {source['title']} (Score: {source['relevance_score']:.2f})")
-        
-        # Test formatting
-        formatted = format_sources(search_result["sources"])
-        logger.info(f"Formatted sources length: {len(formatted)} characters")
-        return True
-    else:
-        logger.error("No sources found in test search")
-        return False
