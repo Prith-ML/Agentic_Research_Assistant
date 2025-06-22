@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
 import streamlit as st
 import time
 from dotenv import load_dotenv
@@ -67,6 +64,19 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize Pinecone: {e}")
     raise
+
+# Global variables for storing search results
+last_search_result = None
+
+def search_databases_wrapper(query: str) -> str:
+    """
+    Wrapper function for search_databases that stores the result globally.
+    This allows us to access sources later without re-running the search.
+    """
+    global last_search_result
+    result = search_databases(query)
+    last_search_result = result  # Store for later use
+    return result["content"]
 
 def classify_database(query: str) -> str:
     """
@@ -419,7 +429,7 @@ def analyze_trends(topic: str) -> str:
 # Register enhanced tools for the agent
 tools = [
     Tool.from_function(
-        func=lambda query: search_databases(query)["content"],  # Extract content for tool
+        func=search_databases_wrapper,  # Use wrapper instead of lambda
         name="search_databases",
         description="Use this tool to answer questions about AI, ML, or research papers. "
                    "This tool searches through a curated dataset of scientific papers "
@@ -614,21 +624,20 @@ def chat(query: str) -> str:
         # Try to get sources from the search results
         sources_section = ""
         try:
-            # If the agent used search_databases, we can extract sources
+            # If the agent used search_databases, we can extract sources from the stored result
             if "intermediate_steps" in out:
                 logger.info(f"Found {len(out['intermediate_steps'])} intermediate steps")
                 for step in out["intermediate_steps"]:
                     logger.info(f"Step tool: {step[0].tool}")
                     if step[0].tool == "search_databases":
                         logger.info(f"Found search_databases step with input: {step[0].tool_input}")
-                        # Extract sources from the search
-                        search_result = search_databases(step[0].tool_input)
-                        if search_result["sources"]:
-                            logger.info(f"Found {len(search_result['sources'])} sources")
-                            sources_section = format_sources(search_result["sources"])
+                        # Use the stored search result instead of re-running the search
+                        if last_search_result and last_search_result["sources"]:
+                            logger.info(f"Found {len(last_search_result['sources'])} sources from database: {last_search_result['database_used']}")
+                            sources_section = format_sources(last_search_result["sources"])
                             break
                         else:
-                            logger.warning("No sources found in search result")
+                            logger.warning("No sources found in stored search result")
             else:
                 logger.info("No intermediate steps found")
                 
@@ -637,7 +646,7 @@ def chat(query: str) -> str:
                 logger.info("Trying direct search for sources")
                 direct_search = search_databases(query)
                 if direct_search["sources"]:
-                    logger.info(f"Direct search found {len(direct_search['sources'])} sources")
+                    logger.info(f"Direct search found {len(direct_search['sources'])} sources from database: {direct_search['database_used']}")
                     sources_section = format_sources(direct_search["sources"])
                 
         except Exception as e:
@@ -646,6 +655,7 @@ def chat(query: str) -> str:
             try:
                 direct_search = search_databases(query)
                 if direct_search["sources"]:
+                    logger.info(f"Fallback search found {len(direct_search['sources'])} sources from database: {direct_search['database_used']}")
                     sources_section = format_sources(direct_search["sources"])
             except Exception as fallback_error:
                 logger.error(f"Fallback search also failed: {fallback_error}")
@@ -762,3 +772,5 @@ def test_source_extraction():
     else:
         logger.error("No sources found in test search")
         return False
+
+
