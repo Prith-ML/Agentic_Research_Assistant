@@ -62,8 +62,8 @@ except Exception as e:
 # Initialize Pinecone
 try:
     pc = Pinecone(api_key=PINECONE_API_KEY)
-    index = pc.Index("ragas")  # Replace with your index name
-    index1 = pc.Index("ragas1")  # Second index
+    index = pc.Index("database1")  # arXiv research papers
+    index1 = pc.Index("database2")  # AI tech articles
     logger.info("Pinecone initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize Pinecone: {e}")
@@ -90,7 +90,7 @@ def classify_database(query: str) -> str:
         query (str): The search query
         
     Returns:
-        str: Database name to search ("ragas" or "ragas1")
+        str: Database name to search ("database1" or "database2")
     """
     classification_prompt = f"""
     Analyze this query and determine which database would be most appropriate to search:
@@ -98,8 +98,8 @@ def classify_database(query: str) -> str:
     Query: "{query}"
 
     Available databases:
-    - RAGAS: Contains academic research papers from arXiv (scientific studies, theoretical work, methodology, mathematical analysis, research findings)
-    - RAGAS1: Contains AI tech articles, news, industry updates, company announcements, product releases, market trends, current developments
+    - database1: Contains academic research papers from arXiv (scientific studies, theoretical work, methodology, mathematical analysis, research findings)
+    - database2: Contains AI tech articles, news, industry updates, company announcements, product releases, market trends, current developments
 
     Consider:
     - Is the user asking about academic research or industry news?
@@ -107,7 +107,7 @@ def classify_database(query: str) -> str:
     - Do they want theoretical analysis or practical updates?
     - Is this about research methodology or business/technology news?
 
-    Respond with exactly one word: RAGAS or RAGAS1
+    Respond with exactly one word: database1 or database2
     """
 
     try:
@@ -115,16 +115,16 @@ def classify_database(query: str) -> str:
         database_choice = response.content.strip().upper()
         
         # Validate response
-        if database_choice in ["RAGAS", "RAGAS1"]:
+        if database_choice in ["database1", "database2"]:
             logger.info(f"LLM selected database: {database_choice.lower()} for query: {query}")
             return database_choice.lower()
         else:
-            logger.warning(f"Invalid LLM response: {database_choice}, defaulting to ragas")
-            return "ragas"
+            logger.warning(f"Invalid LLM response: {database_choice}, defaulting to database1")
+            return "database1"
             
     except Exception as e:
-        logger.error(f"LLM classification failed: {e}, defaulting to ragas")
-        return "ragas"
+        logger.error(f"LLM classification failed: {e}, defaulting to database1")
+        return "database1"
 
 def search_databases(query: str) -> dict:
     """
@@ -144,7 +144,7 @@ def search_databases(query: str) -> dict:
         logger.info(f"Selected database: {database_choice}")
         
         # Select the appropriate index
-        search_index = index1 if database_choice == "ragas1" else index
+        search_index = index1 if database_choice == "database2" else index
         
         xq = embed.embed_query(query)
         
@@ -157,7 +157,7 @@ def search_databases(query: str) -> dict:
         )
         
         if not out["matches"]:
-            content_type = "tech articles" if database_choice == "ragas1" else "research papers"
+            content_type = "tech articles" if database_choice == "database2" else "research papers"
             return {
                 "content": f"Found {content_type} in {database_choice} database but none met the relevance threshold. Try rephrasing your question.",
                 "sources": [],
@@ -273,25 +273,25 @@ def format_sources(sources: list) -> str:
         return ""
     
     # Group sources by database
-    ragas_sources = [s for s in sources if s.get('database') == 'ragas']
-    ragas1_sources = [s for s in sources if s.get('database') == 'ragas1']
+    database1_sources = [s for s in sources if s.get('database') == 'database1']
+    database2_sources = [s for s in sources if s.get('database') == 'database2']
     
     citations = "\n\n## 📚 Sources & References\n\n"
     
     # Determine content type based on database
-    if ragas_sources and ragas1_sources:
-        citations += f"*Based on analysis of {len(ragas_sources)} research papers and {len(ragas1_sources)} tech articles:*\n\n"
-    elif ragas_sources:
-        citations += f"*Based on analysis of {len(ragas_sources)} research papers:*\n\n"
-    elif ragas1_sources:
-        citations += f"*Based on analysis of {len(ragas1_sources)} tech articles:*\n\n"
+    if database1_sources and database2_sources:
+        citations += f"*Based on analysis of {len(database1_sources)} research papers and {len(database2_sources)} tech articles:*\n\n"
+    elif database1_sources:
+        citations += f"*Based on analysis of {len(database1_sources)} research papers:*\n\n"
+    elif database2_sources:
+        citations += f"*Based on analysis of {len(database2_sources)} tech articles:*\n\n"
     else:
         citations += f"*Based on analysis of {len(sources)} sources:*\n\n"
     
     # Add database information if using multiple databases
-    if ragas_sources and ragas1_sources:
+    if database1_sources and database2_sources:
         citations += "**📄 Research Papers (arXiv):**\n"
-        for i, source in enumerate(ragas_sources, 1):
+        for i, source in enumerate(database1_sources, 1):
             citations += f"**{i}.** {source['title']}\n"
             citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
             if source.get('url'):
@@ -299,7 +299,7 @@ def format_sources(sources: list) -> str:
             citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
         
         citations += "**📰 Tech Articles:**\n"
-        for i, source in enumerate(ragas1_sources, 1):
+        for i, source in enumerate(database2_sources, 1):
             citations += f"**{i}.** {source['title']}\n"
             citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
             if source.get('url'):
@@ -307,8 +307,8 @@ def format_sources(sources: list) -> str:
             citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
     else:
         # Single database format
-        database_type = "research papers" if ragas_sources else "tech articles"
-        link_text = "View Paper" if ragas_sources else "View Article"
+        database_type = "research papers" if database1_sources else "tech articles"
+        link_text = "View Paper" if database1_sources else "View Article"
         
         for i, source in enumerate(sources, 1):
             citations += f"**{i}.** {source['title']}\n"
@@ -318,11 +318,11 @@ def format_sources(sources: list) -> str:
             citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
     
     # Add appropriate footer based on database used
-    if ragas_sources and ragas1_sources:
+    if database1_sources and database2_sources:
         citations += "---\n*These sources were retrieved using semantic search through arXiv research papers and AI tech articles.*"
-    elif ragas_sources:
+    elif database1_sources:
         citations += "---\n*These sources were retrieved using semantic search through arXiv research papers.*"
-    elif ragas1_sources:
+    elif database2_sources:
         citations += "---\n*These sources were retrieved using semantic search through AI tech articles.*"
     else:
         citations += "---\n*These sources were retrieved using semantic search.*"
