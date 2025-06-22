@@ -379,20 +379,25 @@ def intelligent_search(query: str) -> dict:
                     include_values=False
                 )
                 
+                logger.info(f"Database1 query returned {len(out.get('matches', []))} matches")
+                
                 if out["matches"]:
                     db1_content = "## 📚 Academic Research Papers\n\n"
                     db1_sources = []
                     
-                    for match in out["matches"]:
+                    for i, match in enumerate(out["matches"]):
+                        score = match.get("score", 0)
+                        logger.info(f"Database1 match {i+1}: score={score:.3f}")
+                        
                         if "metadata" in match and "text" in match["metadata"]:
-                            score = match.get("score", 0)
                             title = match["metadata"].get("title", "Unknown Title")
                             authors = match["metadata"].get("authors", "Unknown Authors")
                             date = match["metadata"].get("date", "Unknown Date")
                             paper_id = match["metadata"].get("paper_id", "Unknown ID")
                             url = match["metadata"].get("url", "")
                             
-                            if score > 0.7:  # Threshold for relevance
+                            if score > 0.3:  # Threshold for relevance (lowered from 0.7 for testing)
+                                logger.info(f"Database1 match {i+1} PASSED threshold: {title}")
                                 result_text = f"[Score: {score:.2f}] {title} by {authors} ({date})\n{match['metadata']['text']}"
                                 db1_content += result_text + "\n---\n"
                                 
@@ -407,10 +412,15 @@ def intelligent_search(query: str) -> dict:
                                     "database": "arXiv Papers"
                                 }
                                 db1_sources.append(source_info)
+                            else:
+                                logger.info(f"Database1 match {i+1} FAILED threshold: {title}")
                     
                     if db1_sources:
                         combined_content += db1_content + "\n"
                         combined_sources.extend(db1_sources)
+                        logger.info(f"Database1 added {len(db1_sources)} sources")
+                    else:
+                        logger.warning("Database1: No sources passed the 0.3 threshold")
                         
             except Exception as e:
                 logger.error(f"Error searching database1: {e}")
@@ -428,13 +438,17 @@ def intelligent_search(query: str) -> dict:
                     include_values=False
                 )
                 
+                logger.info(f"Database2 query returned {len(out.get('matches', []))} matches")
+                
                 if out["matches"]:
                     db2_content = "## 🚀 AI Tech Articles\n\n"
                     db2_sources = []
                     
-                    for match in out["matches"]:
+                    for i, match in enumerate(out["matches"]):
+                        score = match.get("score", 0)
+                        logger.info(f"Database2 match {i+1}: score={score:.3f}")
+                        
                         if "metadata" in match and "text" in match["metadata"]:
-                            score = match.get("score", 0)
                             title = match["metadata"].get("title", "Unknown Title")
                             author = match["metadata"].get("author", "Unknown Author")
                             date = match["metadata"].get("date", "Unknown Date")
@@ -442,7 +456,8 @@ def intelligent_search(query: str) -> dict:
                             url = match["metadata"].get("url", "")
                             source = match["metadata"].get("source", "Unknown Source")
                             
-                            if score > 0.7:  # Threshold for relevance
+                            if score > 0.3:  # Threshold for relevance (lowered from 0.7 for testing)
+                                logger.info(f"Database2 match {i+1} PASSED threshold: {title}")
                                 result_text = f"[Score: {score:.2f}] {title} by {author} ({source}, {date})\n{match['metadata']['text']}"
                                 db2_content += result_text + "\n---\n"
                                 
@@ -458,10 +473,15 @@ def intelligent_search(query: str) -> dict:
                                     "database": "AI Tech Articles"
                                 }
                                 db2_sources.append(source_info)
+                            else:
+                                logger.info(f"Database2 match {i+1} FAILED threshold: {title}")
                     
                     if db2_sources:
                         combined_content += db2_content + "\n"
                         combined_sources.extend(db2_sources)
+                        logger.info(f"Database2 added {len(db2_sources)} sources")
+                    else:
+                        logger.warning("Database2: No sources passed the 0.3 threshold")
                         
             except Exception as e:
                 logger.error(f"Error searching database2: {e}")
