@@ -1,23 +1,27 @@
 import streamlit as st
-from agent_runner import chat, classify_query_type, classify_database
+from agent_runner import chat, classify_query_type
 import time
 from datetime import datetime
 from components import (
     display_chat_stats, 
+    display_agentic_stats,
     export_chat_history, 
     create_advanced_settings,
     display_message_with_metadata,
     create_feedback_system,
     create_research_tips,
     create_welcome_section,
+    create_agentic_welcome_section,
     display_query_info,
-    display_database_selection
+    create_agentic_insights_panel,
+    create_research_planning_interface,
+    create_agentic_features_guide
 )
 
 # Page configuration    
 st.set_page_config(
-    page_title="AI Research Assistant",
-    page_icon="🔬",
+    page_title="Agentic Research Assistant",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -104,6 +108,15 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
+    
+    .agentic-feature {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 0.5rem;
+        border-radius: 5px;
+        margin: 0.25rem 0;
+        font-size: 0.8rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -124,11 +137,12 @@ if "settings" not in st.session_state:
 
 # Sidebar
 with st.sidebar:
-    st.markdown("## 🔬 Research Assistant")
+    st.markdown("## 🤖 Agentic Research Assistant")
     st.markdown("---")
     
-    # Enhanced stats
+    # Enhanced stats with agentic features
     display_chat_stats()
+    display_agentic_stats()
     
     # Advanced settings
     st.session_state.settings = create_advanced_settings()
@@ -152,20 +166,24 @@ with st.sidebar:
     # About section
     st.markdown("### ℹ️ About")
     st.markdown("""
-    This AI Research Assistant helps you explore scientific papers from arXiv and AI tech articles.
+    This **Agentic Research Assistant** goes beyond simple Q&A to provide:
     
-    **Features:**
-    - 🔍 Search across AI/ML papers and tech articles
-    - 📚 Get detailed summaries
-    - 💡 Ask technical questions
-    - 🎯 Find relevant research and news
-    - 📰 Access latest AI industry updates
+    **🤖 Agentic Features:**
+    - 🎯 **Goal Planning**: Breaks down complex research goals
+    - 🤔 **Self-Reflection**: Evaluates and improves responses
+    - 🔍 **Gap Detection**: Identifies missing information
+    - 💡 **Proactive Suggestions**: Generates follow-up questions
+    - 🔧 **Tool Optimization**: Learns from interactions
+    
+    **🤖 Intelligent Database Selection:**
+    - 📄 **Academic Papers**: Automatically selected for research-focused queries
+    - 🚀 **AI Tech Articles**: Automatically selected for industry/practical queries
+    - 🔄 **Both Databases**: Automatically selected when comprehensive coverage is needed
     
     **Powered by:**
     - Claude 3.5 Haiku
     - Pinecone Vector DB
-    - arXiv Dataset
-    - AI Tech Articles Database
+    - AI-Powered Database Selection
     """)
     
     st.markdown("---")
@@ -179,12 +197,61 @@ with st.sidebar:
 
 # Main content
 if not st.session_state.messages:
-    create_welcome_section()
+    create_agentic_welcome_section()
+    
+    # Add agentic features showcase
+    st.markdown("## 🚀 Try Agentic Features")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🎯 Complex Research Goals")
+        st.markdown("""
+        Ask for comprehensive research tasks:
+        - "Give me a complete analysis of transformer architectures"
+        - "Research the latest developments in few-shot learning"
+        - "Compare different approaches to reinforcement learning"
+        """)
+    
+    with col2:
+        st.markdown("### 🤖 Agentic Behaviors")
+        st.markdown("""
+        Watch the AI:
+        - Break down complex goals into sub-tasks
+        - Self-evaluate response quality
+        - Suggest follow-up questions
+        - Learn from interactions
+        """)
+    
+    # Quick start examples
+    st.markdown("### 💡 Quick Start Examples")
+    
+    example_queries = [
+        "Give me a comprehensive analysis of transformer architectures in natural language processing",
+        "Research the latest developments in few-shot learning and their applications",
+        "Compare different approaches to reinforcement learning in robotics",
+        "Investigate the current state of research in computer vision for medical imaging"
+    ]
+    
+    for i, query in enumerate(example_queries):
+        if st.button(f"Try: {query[:50]}...", key=f"example_{i}", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": query, "timestamp": datetime.now()})
+            st.rerun()
+    
+    # Agentic insights panel
+    create_agentic_insights_panel()
+    
+    # Research planning interface
+    create_research_planning_interface()
+    
+    # Agentic features guide
+    create_agentic_features_guide()
+    
 else:
     st.markdown("""
     <div class="main-header">
-        <h1>🔬 AI Research Assistant</h1>
-        <p>Ask questions about AI, machine learning, research papers from arXiv, and AI tech articles</p>
+        <h1>🤖 Agentic Research Assistant</h1>
+        <p>Your intelligent research companion with autonomous planning and self-reflection</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -193,7 +260,7 @@ for message in st.session_state.messages:
     display_message_with_metadata(message, st.session_state.settings["show_timestamps"])
 
 # Chat input
-if prompt := st.chat_input("Ask a question about AI, ML, research papers from arXiv, or AI tech articles..."):
+if prompt := st.chat_input("Ask a complex research question or simple query..."):
     # Classify and display query type
     query_type = classify_query_type(prompt)
     display_query_info(query_type)
@@ -205,14 +272,10 @@ if prompt := st.chat_input("Ask a question about AI, ML, research papers from ar
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # Get AI response
+    # Get AI response with agentic processing
     with st.chat_message("assistant"):
-        with st.spinner("🔍 Searching through research papers and tech articles..."):
+        with st.spinner("🤖 Processing with agentic AI..."):
             try:
-                # First, determine which database will be used
-                database_used = classify_database(prompt)
-                display_database_selection(database_used)
-                
                 response = chat(prompt)
                 st.markdown(response)
                 
@@ -229,6 +292,11 @@ if prompt := st.chat_input("Ask a question about AI, ML, research papers from ar
 if st.session_state.messages:
     st.markdown("---")
     create_feedback_system()
+
+# Agentic insights panel (show after interactions)
+if st.session_state.messages:
+    st.markdown("---")
+    create_agentic_insights_panel()
 
 # Auto-scroll to bottom if enabled
 if st.session_state.settings["auto_scroll"] and st.session_state.messages:
