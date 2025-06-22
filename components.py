@@ -201,7 +201,7 @@ def create_welcome_section():
         <h1>🔬 AI Research Assistant</h1>
         <p style='font-size: 1.2rem; margin: 1rem 0;'>Your intelligent companion for exploring scientific research and AI tech articles</p>
         <div style='background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 10px; margin: 1rem 0;'>
-            <strong>Powered by:</strong> Claude 3.5 Haiku • Pinecone Vector DB • arXiv Dataset • Tech Articles
+            <strong>Powered by:</strong> Claude 3.5 Haiku • Pinecone Vector DB • arXiv Dataset • AI Tech Articles
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -310,7 +310,7 @@ def display_query_info(query_type: str):
     }
     
     enhancement_info = {
-        "general": "Focusing on recent research papers and academic sources",
+        "general": "Focusing on recent research papers, tech articles, and academic sources",
         "comparative": "Providing detailed comparisons with specific examples",
         "trend": "Emphasizing temporal trends and recent developments",
         "technical": "Including mathematical details and technical analysis",
