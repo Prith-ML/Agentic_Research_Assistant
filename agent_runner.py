@@ -2,6 +2,7 @@
 # coding: utf-8
 
 import streamlit as st
+import time
 from dotenv import load_dotenv
 from langchain.agents import Tool, AgentExecutor
 from langchain.agents.output_parsers.xml import XMLAgentOutputParser
@@ -10,51 +11,73 @@ from langchain_aws.embeddings import BedrockEmbeddings
 from langchain_anthropic import ChatAnthropic
 from pinecone import Pinecone
 import logging
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
+# Load environment variables (for local development)
 try:
     load_dotenv()
 except:
     pass
 
 # Get API keys from Streamlit secrets
-CLAUDE_API_KEY = st.secrets["CLAUDE_API_KEY"]
-PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
+try:
+    CLAUDE_API_KEY = st.secrets["CLAUDE_API_KEY"]
+    PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
+except Exception as e:
+    logger.error(f"Failed to load secrets: {e}")
+    raise
+
+# Validate API keys
+assert CLAUDE_API_KEY is not None, "Claude API key missing."
+assert PINECONE_API_KEY is not None, "Pinecone API key missing."
 
 # Initialize LLM
-llm = ChatAnthropic(
-    model_name="claude-3-5-haiku-20241022",
-    temperature=0.2,
-    api_key=CLAUDE_API_KEY
-)
+try:
+    llm = ChatAnthropic(
+        model_name="claude-3-5-haiku-20241022",
+        temperature=0.2,
+        anthropic_api_key=CLAUDE_API_KEY
+    )
+    logger.info("LLM initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize LLM: {e}")
+    raise
 
 # Initialize embeddings
-embed = BedrockEmbeddings(
-    model_id="cohere.embed-english-v3",
-    region_name="us-east-1"
-)
+try:
+    embed = BedrockEmbeddings(
+        model_id="cohere.embed-english-v3",
+        region_name="us-east-1"
+    )
+    logger.info("Embeddings initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize embeddings: {e}")
+    raise
 
 # Initialize Pinecone
-pc = Pinecone(api_key=PINECONE_API_KEY)
-index = pc.Index("database1")  # arXiv research papers
-index1 = pc.Index("database2")  # AI tech articles
-
-# Global variables for storing search results
-last_search_result = None
-
-def search_databases_wrapper(query: str) -> str:
-    """Wrapper function for search_databases that stores the result globally."""
-    global last_search_result
-    result = search_databases(query)
-    last_search_result = result
-    return result["content"]
+try:
+    pc = Pinecone(api_key=PINECONE_API_KEY)
+    index = pc.Index("database1")  # arXiv research papers
+    index1 = pc.Index("database2")  # AI tech articles
+    logger.info("Pinecone initialized successfully with two databases")
+except Exception as e:
+    logger.error(f"Failed to initialize Pinecone: {e}")
+    raise
 
 def classify_database(query: str) -> str:
-    """Use LLM to intelligently classify which database to search based on the user's query."""
+    """
+    Use LLM to intelligently classify which database to search based on the user's query.
+    
+    Args:
+        query (str): The search query
+        
+    Returns:
+        str: Database name to search ("database1" or "database2")
+    """
     classification_prompt = f"""
     Analyze this query and determine which database would be most appropriate to search:
 
@@ -94,26 +117,41 @@ def classify_database(query: str) -> str:
         return "database1"
 
 def search_databases(query: str) -> dict:
-    """Enhanced search through research papers and tech articles using vector similarity with intelligent database routing."""
+    """
+    Enhanced search through research papers and tech articles using vector similarity with intelligent database routing.
+    
+    Args:
+        query (str): The search query
+        
+    Returns:
+        dict: Dictionary containing search results and source information from either research papers or tech articles
+    """
     try:
+        logger.info(f"Searching for: {query}")
+        
         # Determine which database to search
         database_choice = classify_database(query)
+        logger.info(f"Selected database: {database_choice}")
         
         # Select the appropriate index
         search_index = index1 if database_choice == "database2" else index
+        logger.info(f"Using index: {'database2' if database_choice == 'database2' else 'database1'}")
         
         xq = embed.embed_query(query)
         
         # Enhanced query with better parameters
         out = search_index.query(
             vector=xq, 
-            top_k=8,
+            top_k=8,  # Increased for better coverage
             include_metadata=True,
             include_values=False
         )
         
+        logger.info(f"Query returned {len(out.get('matches', []))} matches")
+        
         if not out["matches"]:
             content_type = "tech articles" if database_choice == "database2" else "research papers"
+            logger.warning(f"No matches found in {database_choice} database")
             return {
                 "content": f"Found {content_type} in {database_choice} database but none met the relevance threshold. Try rephrasing your question.",
                 "sources": [],
@@ -133,6 +171,8 @@ def search_databases(query: str) -> dict:
                 date = match["metadata"].get("date", "Unknown Date")
                 paper_id = match["metadata"].get("paper_id", "Unknown ID")
                 url = match["metadata"].get("url", "")
+                
+                logger.info(f"Processing match: {title} (Score: {score:.2f})")
                 
                 # Only include high-quality matches
                 if score > 0.7:  # Threshold for relevance
@@ -160,6 +200,11 @@ def search_databases(query: str) -> dict:
                         "database": database_choice
                     }
                     sources.append(source_info)
+                    logger.info(f"Added source: {title}")
+                else:
+                    logger.info(f"Skipping low-score match: {title} (Score: {score:.2f})")
+        
+        logger.info(f"Final results: {len(results)} results, {len(sources)} sources")
         
         if not results:
             return {
@@ -170,8 +215,8 @@ def search_databases(query: str) -> dict:
             }
         
         return {
-            "content": "\n---\n".join(results[:5]),
-            "sources": sources[:5],
+            "content": "\n---\n".join(results[:5]),  # Return top 5 most relevant
+            "sources": sources[:5],  # Top 5 sources
             "paper_count": len(sources),
             "database_used": database_choice
         }
@@ -186,7 +231,15 @@ def search_databases(query: str) -> dict:
         }
 
 def format_sources(sources: list) -> str:
-    """Format sources into a nice citation format."""
+    """
+    Format sources into a nice citation format.
+    
+    Args:
+        sources (list): List of source dictionaries
+        
+    Returns:
+        str: Formatted citations
+    """
     if not sources:
         return ""
     
@@ -223,16 +276,18 @@ def format_sources(sources: list) -> str:
     return citations
 
 def summarize_papers(query: str) -> str:
-    """Get a summary of papers related to a topic."""
+    """
+    Get a comprehensive summary of papers related to a topic.
+    """
     try:
-        # Get papers first
+        # Get papers first using the new search function
         search_result = search_databases(query)
         if search_result["paper_count"] == 0:
-            return f"No papers found for {query}"
+            return search_result["content"]
         
-        # Simple summary prompt
+        # Ask the LLM to summarize
         summary_prompt = f"""
-        Based on the following research papers, provide a comprehensive summary of: {query}
+        Based on the following research papers, provide a comprehensive summary of the current state of research on: {query}
         
         Papers:
         {search_result["content"]}
@@ -256,16 +311,18 @@ def summarize_papers(query: str) -> str:
         return f"Error summarizing papers: {str(e)}"
 
 def analyze_trends(topic: str) -> str:
-    """Analyze trends in a specific research area."""
+    """
+    Analyze trends in a specific research area.
+    """
     try:
-        # Search for recent papers
+        # Search for recent papers using the new search function
         recent_query = f"latest developments {topic} 2024 2023"
         search_result = search_databases(recent_query)
         
         if search_result["paper_count"] == 0:
             return f"No recent papers found for {topic}"
         
-        # Simple trend analysis prompt
+        # Analyze trends
         trend_prompt = f"""
         Analyze the following recent papers to identify trends in {topic}:
         
@@ -290,7 +347,14 @@ def analyze_trends(topic: str) -> str:
         logger.error(f"Error in analyze_trends: {e}")
         return f"Error analyzing trends: {str(e)}"
 
-# Register tools for the agent
+def search_databases_wrapper(query: str) -> str:
+    """
+    Wrapper function for search_databases that returns just the content for the agent.
+    """
+    result = search_databases(query)
+    return result["content"]
+
+# Register enhanced tools for the agent
 tools = [
     Tool.from_function(
         func=search_databases_wrapper,
@@ -316,7 +380,12 @@ tools = [
 ]
 
 # Load XML agent prompt
-prompt = hub.pull("hwchase17/xml-agent-convo")
+try:
+    prompt = hub.pull("hwchase17/xml-agent-convo")
+    logger.info("Agent prompt loaded successfully")
+except Exception as e:
+    logger.error(f"Failed to load agent prompt: {e}")
+    raise
 
 def convert_intermediate_steps(intermediate_steps):
     """Convert intermediate steps to XML format for the agent."""
@@ -331,41 +400,38 @@ def convert_tools(tools):
     return "\n".join([f"{tool.name}: {tool.description}" for tool in tools])
 
 # Initialize agent
-agent = (
-    {
-        "input": lambda x: x["input"],
-        "chat_history": lambda x: x.get("chat_history", ""),
-        "agent_scratchpad": lambda x: convert_intermediate_steps(x.get("intermediate_steps", [])),
-    }
-    | prompt.partial(
-        tools=convert_tools(tools),
-        system_message="CRITICAL: For questions about AI companies, industry developments, current AI news, product announcements, company research, or any specific AI-related information, you MUST use the search tools to get current and accurate information. "
-                      "For questions about AI models, AI developments, or any AI topic that might have recent updates, ALWAYS search the database first. "
-                      "Use search_databases for company information and current developments, summarize_papers for research summaries, or analyze_trends for trend analysis. "
-                      "Only use your knowledge for basic definitions that don't require current information. "
-                      "This is a research assistant - your primary job is to search databases and provide sourced information."
+try:
+    agent = (
+        {
+            "input": lambda x: x["input"],
+            "chat_history": lambda x: x.get("chat_history", ""),
+            "agent_scratchpad": lambda x: convert_intermediate_steps(x.get("intermediate_steps", [])),
+        }
+        | prompt.partial(tools=convert_tools(tools))
+        | llm.bind(stop=["</tool_input>", "</final_answer>"])
+        | XMLAgentOutputParser()
     )
-    | llm.bind(stop=["</tool_input>", "</final_answer>"])
-    | XMLAgentOutputParser()
-)
+    
+    agent_executor = AgentExecutor(
+        agent=agent, 
+        tools=tools, 
+        return_intermediate_steps=True, 
+        verbose=True
+    )
+    logger.info("Agent initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize agent: {e}")
+    raise
 
-agent_executor = AgentExecutor(
-    agent=agent, 
-    tools=tools, 
-    return_intermediate_steps=True, 
-    verbose=True
-)
-
-# Global chat history and cache
+# Global chat history and cache with better memory management
 chat_history = []
 response_cache = {}
-MAX_HISTORY_EXCHANGES = 6
+MAX_HISTORY_EXCHANGES = 6  # 3 exchanges (6 messages: 3 human + 3 assistant)
 MAX_CACHE_SIZE = 100
 CACHE_CLEANUP_SIZE = 20
 
 # Query enhancement and classification system
 QUERY_ENHANCEMENTS = {
-    "company_info": "Focus on current company developments, industry news, and recent announcements from AI companies.",
     "general": "Focus on recent research papers and academic sources.",
     "comparative": "Provide detailed comparisons with specific examples from research papers.",
     "trend": "Emphasize temporal trends and evolution of the field with recent developments.",
@@ -375,15 +441,19 @@ QUERY_ENHANCEMENTS = {
 }
 
 def classify_query_type(query: str) -> str:
-    """Classify query type for optimal prompt selection."""
+    """
+    Classify query type for optimal prompt selection.
+    
+    Args:
+        query (str): The user's question
+        
+    Returns:
+        str: Query type classification
+    """
     query_lower = query.lower()
     
-    # Check for company/industry queries (should trigger database search)
-    if any(word in query_lower for word in ["company", "industry", "insight", "development", "announcement", "product", "news", "current", "latest", "recent"]):
-        return "company_info"
-    
     # Check for comparative queries
-    elif any(word in query_lower for word in ["compare", "difference", "vs", "versus", "versus", "contrast", "similarity"]):
+    if any(word in query_lower for word in ["compare", "difference", "vs", "versus", "versus", "contrast", "similarity"]):
         return "comparative"
     
     # Check for trend queries
@@ -407,111 +477,144 @@ def classify_query_type(query: str) -> str:
         return "general"
 
 def enhance_query(query: str, query_type: str | None = None) -> str:
-    """Enhance user queries with research-specific context."""
+    """
+    Enhance user queries with research-specific context.
+    
+    Args:
+        query (str): The original user query
+        query_type (str | None): The classified query type (auto-detected if None)
+        
+    Returns:
+        str: Enhanced query with research context
+    """
     if query_type is None:
         query_type = classify_query_type(query)
     
     enhancement = QUERY_ENHANCEMENTS.get(query_type, QUERY_ENHANCEMENTS["general"])
     enhanced_query = f"{query} {enhancement}"
     
+    logger.info(f"Query enhanced: '{query}' -> Type: {query_type}")
     return enhanced_query
 
 def chat(query: str) -> str:
-    """Enhanced chat function that respects agent's tool choice and uses database as fallback."""
+    """
+    Enhanced chat function with agentic database selection and cost-efficient memory management.
+    
+    Args:
+        query (str): The user's question
+        
+    Returns:
+        str: The AI assistant's response with sources
+    """
     global chat_history, response_cache
     
     try:
+        logger.info(f"Processing query: {query}")
+        
         # Check cache for similar queries
         cache_key = query.lower().strip()
         if cache_key in response_cache:
+            logger.info("Returning cached response")
             return response_cache[cache_key]
         
         # Enhance the query for better results
         query_type = classify_query_type(query)
         enhanced_query = enhance_query(query, query_type)
         
-        # Execute the agent with enhanced query
+        # Add a small delay to prevent rate limiting
+        time.sleep(1)
+        
+        # Extract context from recent conversation (last 3 exchanges for cost efficiency)
+        recent_exchanges = chat_history[-3:] if len(chat_history) >= 3 else chat_history
+        recent_context = ""
+        
+        if recent_exchanges:
+            # Format recent context more efficiently
+            context_parts = []
+            for exchange in recent_exchanges:
+                context_parts.append(f"Human: {exchange['human']}")
+                context_parts.append(f"Assistant: {exchange['assistant']}")
+            recent_context = " ".join(context_parts)
+        
+        # Execute the agent with enhanced query and context
         out = agent_executor.invoke({
             "input": enhanced_query,
-            "chat_history": ""
+            "chat_history": recent_context
         })
         
-        agent_answer = out.get("output", "")
+        answer = out.get("output", "I apologize, but I couldn't generate a response for your query.")
         
-        # Check if agent used any tools
-        agent_used_tools = False
+        # Try to get sources from the search results
         sources_section = ""
-        
         try:
+            # If the agent used search_databases, we can extract sources
             if "intermediate_steps" in out:
+                logger.info(f"Found {len(out['intermediate_steps'])} intermediate steps")
                 for step in out["intermediate_steps"]:
-                    agent_used_tools = True
-                    
-                    # Check for search_databases tool
-                    if step[0].tool == "search_databases" and last_search_result and last_search_result["sources"]:
-                        sources_section = format_sources(last_search_result["sources"])
-                        break
-                    
-                    # Check for summarize_papers tool - extract sources from the response
-                    elif step[0].tool == "summarize_papers":
-                        agent_output = step[1] if len(step) > 1 else ""
-                        if "## 📚 Sources & References" in agent_output:
-                            sources_start = agent_output.find("## 📚 Sources & References")
-                            sources_section = agent_output[sources_start:]
+                    logger.info(f"Step tool: {step[0].tool}")
+                    if step[0].tool == "search_databases":
+                        logger.info(f"Found search_databases step with input: {step[0].tool_input}")
+                        # Extract sources from the search
+                        search_result = search_databases(step[0].tool_input)
+                        if search_result["sources"]:
+                            logger.info(f"Found {len(search_result['sources'])} sources")
+                            sources_section = format_sources(search_result["sources"])
                             break
-                    
-                    # Check for analyze_trends tool - extract sources from the response
-                    elif step[0].tool == "analyze_trends":
-                        agent_output = step[1] if len(step) > 1 else ""
-                        if "## 📚 Sources & References" in agent_output:
-                            sources_start = agent_output.find("## 📚 Sources & References")
-                            sources_section = agent_output[sources_start:]
-                            break
-                            
+                        else:
+                            logger.warning("No sources found in search result")
+            else:
+                logger.info("No intermediate steps found")
+                
+            # If no sources found from agent steps, try direct search
+            if not sources_section:
+                logger.info("Trying direct search for sources")
+                direct_search = search_databases(query)
+                if direct_search["sources"]:
+                    logger.info(f"Direct search found {len(direct_search['sources'])} sources")
+                    sources_section = format_sources(direct_search["sources"])
+                
         except Exception as e:
-            logger.warning(f"Could not extract sources from agent: {e}")
+            logger.warning(f"Could not extract sources: {e}")
+            # Try direct search as fallback
+            try:
+                direct_search = search_databases(query)
+                if direct_search["sources"]:
+                    sources_section = format_sources(direct_search["sources"])
+            except Exception as fallback_error:
+                logger.error(f"Fallback search also failed: {fallback_error}")
         
-        # If agent didn't use tools, try database search as fallback
-        if not agent_used_tools:
-            search_result = search_databases(query)
-            if search_result["paper_count"] > 0:
-                sources_section = format_sources(search_result["sources"])
-                full_response = search_result["content"] + sources_section
-            else:
-                full_response = agent_answer
+        # Combine answer with sources
+        full_response = answer
+        if sources_section:
+            full_response += sources_section
+            logger.info("Sources added to response")
         else:
-            # Agent used tools, check if we need to add sources
-            if not sources_section and "## 📚 Sources & References" not in agent_answer:
-                search_result = search_databases(query)
-                if search_result["paper_count"] > 0:
-                    sources_section = format_sources(search_result["sources"])
-                    full_response = agent_answer + sources_section
-                else:
-                    full_response = agent_answer
-            else:
-                # Agent used tools and sources are already included
-                full_response = agent_answer
+            logger.warning("No sources found for this query")
         
         # Cache the response
         response_cache[cache_key] = full_response
         
         # Improved cache management
         if len(response_cache) > MAX_CACHE_SIZE:
+            # Remove oldest entries more efficiently
             oldest_keys = list(response_cache.keys())[:CACHE_CLEANUP_SIZE]
             for key in oldest_keys:
                 del response_cache[key]
         
-        # Update chat history
+        # Update chat history with structured data (more memory efficient)
         exchange = {
             "human": query,
-            "assistant": agent_answer,
-            "query_type": query_type
+            "assistant": answer,  # Store without sources in history
+            "timestamp": datetime.now(),
+            "query_type": query_type  # Store query type for analysis
         }
         chat_history.append(exchange)
         
+        # Limit history size to 3 exchanges for cost efficiency
         if len(chat_history) > MAX_HISTORY_EXCHANGES:
             chat_history = chat_history[-MAX_HISTORY_EXCHANGES:]
         
+        logger.info(f"Query processed successfully. Type: {query_type}, History size: {len(chat_history)}, Cache size: {len(response_cache)}")
         return full_response
         
     except Exception as e:
@@ -523,8 +626,72 @@ def clear_cache():
     """Clear the response cache."""
     global response_cache
     response_cache.clear()
+    logger.info("Response cache cleared")
 
 def clear_history():
     """Clear the chat history."""
     global chat_history
     chat_history.clear()
+    logger.info("Chat history cleared")
+
+def get_chat_stats():
+    """Get statistics about the chat session."""
+    global chat_history, response_cache
+    return {
+        "cache_size": len(response_cache),
+        "history_exchanges": len(chat_history),
+        "memory_usage_mb": estimate_memory_usage(),
+        "avg_exchange_length": calculate_avg_exchange_length()
+    }
+
+def estimate_memory_usage():
+    """Estimate memory usage in MB."""
+    import sys
+    
+    # Estimate memory for chat history
+    history_memory = sum(
+        sys.getsizeof(exchange["human"]) + sys.getsizeof(exchange["assistant"])
+        for exchange in chat_history
+    )
+    
+    # Estimate memory for cache
+    cache_memory = sum(
+        sys.getsizeof(key) + sys.getsizeof(value)
+        for key, value in response_cache.items()
+    )
+    
+    total_memory = history_memory + cache_memory
+    return round(total_memory / (1024 * 1024), 2)  # Convert to MB
+
+def calculate_avg_exchange_length():
+    """Calculate average length of exchanges."""
+    if not chat_history:
+        return 0
+    
+    total_length = sum(
+        len(exchange["human"]) + len(exchange["assistant"])
+        for exchange in chat_history
+    )
+    return round(total_length / len(chat_history), 0)
+
+def test_source_extraction():
+    """Test function to verify source extraction is working."""
+    test_query = "What are transformer architectures?"
+    logger.info(f"Testing source extraction with query: {test_query}")
+    
+    # Test direct search
+    search_result = search_databases(test_query)
+    logger.info(f"Search result: {search_result['paper_count']} papers found")
+    
+    if search_result["sources"]:
+        logger.info(f"Sources found: {len(search_result['sources'])}")
+        for i, source in enumerate(search_result["sources"][:2]):  # Show first 2
+            logger.info(f"Source {i+1}: {source['title']} (Score: {source['relevance_score']:.2f})")
+        
+        # Test formatting
+        formatted = format_sources(search_result["sources"])
+        logger.info(f"Formatted sources length: {len(formatted)} characters")
+        return True
+    else:
+        logger.error("No sources found in test search")
+        return False
