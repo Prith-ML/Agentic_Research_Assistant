@@ -62,14 +62,98 @@ except Exception as e:
 try:
     pc = Pinecone(api_key=PINECONE_API_KEY)
     index = pc.Index("ragas")  # Replace with your index name
+    index1 = pc.Index("ragas1")  # Second index
     logger.info("Pinecone initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize Pinecone: {e}")
     raise
 
+def classify_database(query: str) -> str:
+    """
+    Classify which database to search based on query analysis.
+    
+    Args:
+        query (str): The search query
+        
+    Returns:
+        str: Database name to search ("ragas" or "ragas1")
+    """
+    query_lower = query.lower()
+    
+    # Keywords that suggest ragas1 database (AI tech articles, news, trends)
+    ragas1_keywords = [
+        # AI/ML tech and industry
+        "ai", "artificial intelligence", "machine learning", "ml", "deep learning",
+        "neural networks", "chatgpt", "gpt", "llm", "large language models",
+        "openai", "anthropic", "google", "microsoft", "meta", "apple",
+        
+        # Tech news and trends
+        "news", "trends", "latest", "recent", "update", "announcement",
+        "release", "launch", "new", "emerging", "cutting edge", "breakthrough",
+        "innovation", "development", "advancement", "progress",
+        
+        # Industry and business
+        "industry", "business", "startup", "company", "enterprise", "commercial",
+        "market", "investment", "funding", "acquisition", "partnership",
+        "product", "service", "application", "implementation",
+        
+        # Technology and tools
+        "technology", "tool", "platform", "framework", "library", "api",
+        "software", "system", "solution", "infrastructure", "cloud",
+        "gpu", "hardware", "chip", "processor", "algorithm",
+        
+        # Current events and time-sensitive
+        "2024", "2023", "this year", "this month", "recently", "now",
+        "current", "ongoing", "happening", "latest developments",
+        
+        # Explicit database mentions
+        "ragas1", "database1", "index1", "secondary", "alternative",
+        "specific", "specialized", "domain1", "collection1"
+    ]
+    
+    # Keywords that suggest ragas database (research papers, academic)
+    ragas_keywords = [
+        # Academic and research
+        "research", "paper", "study", "academic", "scientific", "theoretical",
+        "methodology", "experiment", "evaluation", "analysis", "survey",
+        "literature review", "citation", "publication", "journal", "conference",
+        
+        # Mathematical and technical details
+        "mathematical", "formula", "equation", "proof", "theorem", "algorithm",
+        "implementation details", "architecture", "model", "framework",
+        "performance", "benchmark", "comparison", "evaluation metrics",
+        
+        # Research domains
+        "computer vision", "nlp", "natural language processing", "robotics",
+        "reinforcement learning", "supervised learning", "unsupervised learning",
+        "optimization", "statistics", "probability", "linear algebra",
+        
+        # Explicit database mentions
+        "ragas", "primary", "main", "general", "overview", "comprehensive"
+    ]
+    
+    # Check for explicit database mentions first
+    if any(keyword in query_lower for keyword in ["ragas1", "database1", "index1"]):
+        return "ragas1"
+    elif any(keyword in query_lower for keyword in ["ragas", "primary", "main"]):
+        return "ragas"
+    
+    # Count keyword matches for each database
+    ragas1_score = sum(1 for keyword in ragas1_keywords if keyword in query_lower)
+    ragas_score = sum(1 for keyword in ragas_keywords if keyword in query_lower)
+    
+    # If there's a clear preference, use it
+    if ragas1_score > ragas_score:
+        return "ragas1"
+    elif ragas_score > ragas1_score:
+        return "ragas"
+    
+    # Default to ragas (primary database) for general queries
+    return "ragas"
+
 def arxiv_search(query: str) -> dict:
     """
-    Enhanced search through arXiv papers using vector similarity.
+    Enhanced search through arXiv papers using vector similarity with database routing.
     
     Args:
         query (str): The search query
@@ -79,10 +163,18 @@ def arxiv_search(query: str) -> dict:
     """
     try:
         logger.info(f"Searching for: {query}")
+        
+        # Determine which database to search
+        database_choice = classify_database(query)
+        logger.info(f"Selected database: {database_choice}")
+        
+        # Select the appropriate index
+        search_index = index1 if database_choice == "ragas1" else index
+        
         xq = embed.embed_query(query)
         
         # Enhanced query with better parameters
-        out = index.query(
+        out = search_index.query(
             vector=xq, 
             top_k=8,  # Increased for better coverage
             include_metadata=True,
@@ -91,9 +183,10 @@ def arxiv_search(query: str) -> dict:
         
         if not out["matches"]:
             return {
-                "content": "No relevant papers found for this query.",
+                "content": f"No relevant papers found for this query in {database_choice} database.",
                 "sources": [],
-                "paper_count": 0
+                "paper_count": 0,
+                "database_used": database_choice
             }
         
         # Enhanced result processing with ranking and source tracking
@@ -122,21 +215,24 @@ def arxiv_search(query: str) -> dict:
                         "paper_id": paper_id,
                         "url": url,
                         "relevance_score": score,
-                        "excerpt": match["metadata"]["text"][:200] + "..." if len(match["metadata"]["text"]) > 200 else match["metadata"]["text"]
+                        "excerpt": match["metadata"]["text"][:200] + "..." if len(match["metadata"]["text"]) > 200 else match["metadata"]["text"],
+                        "database": database_choice
                     }
                     sources.append(source_info)
         
         if not results:
             return {
-                "content": "Found papers but none met the relevance threshold. Try rephrasing your question.",
+                "content": f"Found papers in {database_choice} database but none met the relevance threshold. Try rephrasing your question.",
                 "sources": [],
-                "paper_count": 0
+                "paper_count": 0,
+                "database_used": database_choice
             }
         
         return {
             "content": "\n---\n".join(results[:5]),  # Return top 5 most relevant
             "sources": sources[:5],  # Top 5 sources
-            "paper_count": len(sources)
+            "paper_count": len(sources),
+            "database_used": database_choice
         }
         
     except Exception as e:
@@ -144,7 +240,8 @@ def arxiv_search(query: str) -> dict:
         return {
             "content": f"Error searching papers: {str(e)}",
             "sources": [],
-            "paper_count": 0
+            "paper_count": 0,
+            "database_used": "unknown"
         }
 
 def format_sources(sources: list) -> str:
@@ -160,15 +257,42 @@ def format_sources(sources: list) -> str:
     if not sources:
         return ""
     
-    citations = "\n\n## 📚 Sources & References\n\n"
-    citations += f"*Based on analysis of {len(sources)} research papers:*\n\n"
+    # Group sources by database
+    ragas_sources = [s for s in sources if s.get('database') == 'ragas']
+    ragas1_sources = [s for s in sources if s.get('database') == 'ragas1']
     
-    for i, source in enumerate(sources, 1):
-        citations += f"**{i}.** {source['title']}\n"
-        citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
-        if source.get('url'):
-            citations += f"   - **Link:** [View Paper]({source['url']})\n"
-        citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
+    citations = "\n\n## 📚 Sources & References\n\n"
+    
+    if ragas_sources and ragas1_sources:
+        citations += f"*Based on analysis of {len(sources)} research papers from multiple databases:*\n\n"
+    else:
+        citations += f"*Based on analysis of {len(sources)} research papers:*\n\n"
+    
+    # Add database information if using multiple databases
+    if ragas_sources and ragas1_sources:
+        citations += "**Primary Database (ragas):**\n"
+        for i, source in enumerate(ragas_sources, 1):
+            citations += f"**{i}.** {source['title']}\n"
+            citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
+            if source.get('url'):
+                citations += f"   - **Link:** [View Paper]({source['url']})\n"
+            citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
+        
+        citations += "**Secondary Database (ragas1):**\n"
+        for i, source in enumerate(ragas1_sources, 1):
+            citations += f"**{i}.** {source['title']}\n"
+            citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
+            if source.get('url'):
+                citations += f"   - **Link:** [View Paper]({source['url']})\n"
+            citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
+    else:
+        # Single database format (original)
+        for i, source in enumerate(sources, 1):
+            citations += f"**{i}.** {source['title']}\n"
+            citations += f"   - **Relevance Score:** {source['relevance_score']:.2f}\n"
+            if source.get('url'):
+                citations += f"   - **Link:** [View Paper]({source['url']})\n"
+            citations += f"   - **Excerpt:** {source['excerpt']}\n\n"
     
     citations += "---\n*These sources were retrieved using semantic search through arXiv papers.*"
     return citations
