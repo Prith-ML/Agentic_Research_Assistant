@@ -232,12 +232,17 @@ def create_analytics_dashboard():
         
         if st.session_state.usage_data:
             # Create a simple usage chart
-            import plotly.express as px
-            import pandas as pd
-            
-            df = pd.DataFrame(st.session_state.usage_data)
-            fig = px.line(df, x='timestamp', y='searches', title='Search Activity Over Time')
-            st.plotly_chart(fig, use_container_width=True)
+            try:
+                import plotly.express as px
+                import pandas as pd
+                
+                df = pd.DataFrame(st.session_state.usage_data)
+                fig = px.line(df, x='timestamp', y='searches', title='Search Activity Over Time')
+                st.plotly_chart(fig, use_container_width=True)
+            except ImportError:
+                st.info("📊 Chart visualization requires plotly. Install with: pip install plotly")
+            except Exception as e:
+                st.info(f"📊 Could not create chart: {str(e)}")
 
 def create_research_insights():
     """Create insights panel for research patterns."""
@@ -301,15 +306,17 @@ def display_query_info(query_type: str):
     Display information about how the query is being processed.
     """
     query_type_info = {
+        "company_info": "🏢 Company & Industry Insights",
         "general": "🔍 General Research Query",
-        "comparative": "⚖️ Comparative Analysis",
-        "trend": "📈 Trend Analysis", 
+        "comparative": "⚖️ Comparative Analysis", 
+        "trend": "📈 Trend Analysis",
         "technical": "🔧 Technical Deep-dive",
         "review": "📚 Literature Review",
         "implementation": "💻 Implementation Focus"
     }
     
     enhancement_info = {
+        "company_info": "Focusing on current company developments, industry news, and recent announcements",
         "general": "Focusing on recent research papers, tech articles, and academic sources",
         "comparative": "Providing detailed comparisons with specific examples",
         "trend": "Emphasizing temporal trends and recent developments",
