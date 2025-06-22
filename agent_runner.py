@@ -482,7 +482,7 @@ try:
         | prompt.partial(
             tools=convert_tools(tools),
             system_message="When answering questions about AI, ML, research, or technical topics, "
-                          "PREFER using the search tools to get the most accurate and current information. "
+                          "PLEASE DO IT BY USING the search tools to get the most accurate and current information. "
                           "You can still use your knowledge for basic definitions or general concepts."
         )
         | llm.bind(stop=["</tool_input>", "</final_answer>"])
