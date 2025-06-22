@@ -1,5 +1,6 @@
 import streamlit as st
 from agent_runner import chat, classify_query_type, classify_database
+import time
 from datetime import datetime
 from components import (
     display_chat_stats, 
@@ -20,6 +21,91 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    .main-header {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+        color: white;
+        text-align: center;
+    }
+    
+    .chat-message {
+        padding: 1rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        border-left: 4px solid #667eea;
+    }
+    
+    .user-message {
+        background-color: #f0f2f6;
+        border-left-color: #667eea;
+    }
+    
+    .assistant-message {
+        background-color: #e8f4fd;
+        border-left-color: #764ba2;
+    }
+    
+    .stTextInput > div > div > input {
+        border-radius: 25px;
+        border: 2px solid #e0e0e0;
+        padding: 0.75rem 1rem;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+    }
+    
+    .sidebar .sidebar-content {
+        background-color: #f8f9fa;
+    }
+    
+    .metric-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 10px;
+        border: 1px solid #e0e0e0;
+        text-align: center;
+        margin: 0.5rem 0;
+    }
+    
+    .clear-button {
+        background: linear-gradient(90deg, #ff6b6b 0%, #ee5a24 100%);
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        cursor: pointer;
+        font-size: 0.9rem;
+    }
+    
+    .clear-button:hover {
+        opacity: 0.9;
+    }
+    
+    .quick-action-btn {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        margin: 0.25rem 0;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    
+    .quick-action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Initialize session state
 if "messages" not in st.session_state:
