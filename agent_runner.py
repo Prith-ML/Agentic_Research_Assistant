@@ -374,7 +374,7 @@ def intelligent_search(query: str) -> dict:
                 
                 out = database1_index.query(
                     vector=xq, 
-                    top_k=8,
+                    top_k=3,
                     include_metadata=True,
                     include_values=False
                 )
@@ -398,8 +398,8 @@ def intelligent_search(query: str) -> dict:
                             
                             if score > 0.3:  # Threshold for relevance (lowered from 0.7 for testing)
                                 logger.info(f"Database1 match {i+1} PASSED threshold: {title}")
-                                result_text = f"[Score: {score:.2f}] {title} by {authors} ({date})\n{match['metadata']['text']}"
-                                db1_content += result_text + "\n---\n"
+                                # Don't include raw text in main response, only in sources
+                                db1_content += f"[Score: {score:.2f}] {title} by {authors} ({date})\n---\n"
                                 
                                 source_info = {
                                     "title": title,
@@ -433,7 +433,7 @@ def intelligent_search(query: str) -> dict:
                 
                 out = database2_index.query(
                     vector=xq, 
-                    top_k=8,
+                    top_k=3,
                     include_metadata=True,
                     include_values=False
                 )
@@ -458,8 +458,8 @@ def intelligent_search(query: str) -> dict:
                             
                             if score > 0.3:  # Threshold for relevance (lowered from 0.7 for testing)
                                 logger.info(f"Database2 match {i+1} PASSED threshold: {title}")
-                                result_text = f"[Score: {score:.2f}] {title} by {author} ({source}, {date})\n{match['metadata']['text']}"
-                                db2_content += result_text + "\n---\n"
+                                # Don't include raw text in main response, only in sources
+                                db2_content += f"[Score: {score:.2f}] {title} by {author} ({source}, {date})\n---\n"
                                 
                                 source_info = {
                                     "title": title,
@@ -660,6 +660,52 @@ def enhance_query(query: str, query_type: str | None = None) -> str:
     logger.info(f"Enhanced query: {enhanced_query}")
     return enhanced_query
 
+def generate_narrative_response(query: str, search_result: dict) -> str:
+    """
+    Generate a narrative-style response with paragraphs first, then bullet points.
+    
+    Args:
+        query (str): The user's question
+        search_result (dict): Search results from intelligent_search
+        
+    Returns:
+        str: Formatted narrative response
+    """
+    try:
+        # Create a prompt for narrative response
+        narrative_prompt = f"""
+        Based on the following research content, provide a comprehensive response to: {query}
+        
+        Research Content:
+        {search_result["content"]}
+        
+        Please structure your response as follows:
+        
+        1. **Narrative Section**: Write 2-3 paragraphs that provide a comprehensive overview of the topic, explaining key concepts, developments, and implications in a flowing narrative style.
+        
+        2. **Key Points Section**: After the narrative, provide key points in bullet format covering:
+           - Current technological advances
+           - Key research objectives  
+           - Technological challenges
+           - Promising demonstrations
+           - Future potential
+        
+        Make the narrative engaging and informative, connecting different aspects of the research into a coherent story.
+        """
+        
+        response = llm.invoke(narrative_prompt)
+        narrative_response = str(response.content)
+        
+        # Add sources section
+        sources_section = format_sources(search_result["sources"])
+        
+        return narrative_response + sources_section
+        
+    except Exception as e:
+        logger.error(f"Error generating narrative response: {e}")
+        # Fallback to simple response
+        return f"Based on the research content: {search_result['content']}" + format_sources(search_result["sources"])
+
 def chat(query: str) -> str:
     """
     Main chat function - simplified processing for all queries.
@@ -684,33 +730,17 @@ def chat(query: str) -> str:
         # Add a small delay to prevent rate limiting
         time.sleep(1)
         
-        # Extract context from recent conversation
-        recent_exchanges = chat_history[-3:] if len(chat_history) >= 3 else chat_history
-        recent_context = ""
+        # Get search results directly
+        search_result = intelligent_search(enhanced_query)
         
-        if recent_exchanges:
-            context_parts = []
-            for exchange in recent_exchanges:
-                context_parts.append(f"Human: {exchange['human']}")
-                context_parts.append(f"Assistant: {exchange['assistant']}")
-            recent_context = " ".join(context_parts)
+        if search_result["total_count"] == 0:
+            return f"I couldn't find relevant information for your query: {query}"
         
-        # Execute the agent with enhanced query and context
-        out = agent_executor.invoke({
-            "input": enhanced_query,
-            "chat_history": recent_context
-        })
-        
-        answer = out.get("output", "I apologize, but I couldn't generate a response for your query.")
-        
-        # Extract sources
-        sources_section = _extract_sources(out, query)
-        
-        # Combine answer with sources
-        full_response = answer + sources_section
+        # Generate narrative response
+        narrative_response = generate_narrative_response(query, search_result)
         
         # Add agentic features
-        enhanced_response = _add_agentic_features(full_response, query)
+        enhanced_response = _add_agentic_features(narrative_response, query)
         
         # Cache and update history
         _update_cache_and_history(query, enhanced_response)
