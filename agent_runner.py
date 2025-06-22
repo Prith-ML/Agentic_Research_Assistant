@@ -70,7 +70,7 @@ except Exception as e:
 
 def classify_database(query: str) -> str:
     """
-    Classify which database to search based on query analysis.
+    Use LLM to intelligently classify which database to search based on the user's query.
     
     Args:
         query (str): The search query
@@ -78,78 +78,39 @@ def classify_database(query: str) -> str:
     Returns:
         str: Database name to search ("ragas" or "ragas1")
     """
-    query_lower = query.lower()
-    
-    # Keywords that suggest ragas1 database (AI tech articles, news, trends)
-    ragas1_keywords = [
-        # AI/ML tech and industry
-        "ai", "artificial intelligence", "machine learning", "ml", "deep learning",
-        "neural networks", "chatgpt", "gpt", "llm", "large language models",
-        "openai", "anthropic", "google", "microsoft", "meta", "apple",
+    classification_prompt = f"""
+    Analyze this query and determine which database would be most appropriate to search:
+
+    Query: "{query}"
+
+    Available databases:
+    - RAGAS: Contains academic research papers from arXiv (scientific studies, theoretical work, methodology, mathematical analysis, research findings)
+    - RAGAS1: Contains AI tech articles, news, industry updates, company announcements, product releases, market trends, current developments
+
+    Consider:
+    - Is the user asking about academic research or industry news?
+    - Are they looking for scientific papers or current developments?
+    - Do they want theoretical analysis or practical updates?
+    - Is this about research methodology or business/technology news?
+
+    Respond with exactly one word: RAGAS or RAGAS1
+    """
+
+    try:
+        response = llm.invoke(classification_prompt)
+        database_choice = response.content.strip().upper()
         
-        # Tech news and trends
-        "news", "trends", "latest", "recent", "update", "announcement",
-        "release", "launch", "new", "emerging", "cutting edge", "breakthrough",
-        "innovation", "development", "advancement", "progress",
-        
-        # Industry and business
-        "industry", "business", "startup", "company", "enterprise", "commercial",
-        "market", "investment", "funding", "acquisition", "partnership",
-        "product", "service", "application", "implementation",
-        
-        # Technology and tools
-        "technology", "tool", "platform", "framework", "library", "api",
-        "software", "system", "solution", "infrastructure", "cloud",
-        "gpu", "hardware", "chip", "processor", "algorithm",
-        
-        # Current events and time-sensitive
-        "2024", "2023", "this year", "this month", "recently", "now",
-        "current", "ongoing", "happening", "latest developments",
-        
-        # Explicit database mentions
-        "ragas1", "database1", "index1", "secondary", "alternative",
-        "specific", "specialized", "domain1", "collection1"
-    ]
-    
-    # Keywords that suggest ragas database (research papers, academic)
-    ragas_keywords = [
-        # Academic and research
-        "research", "paper", "study", "academic", "scientific", "theoretical",
-        "methodology", "experiment", "evaluation", "analysis", "survey",
-        "literature review", "citation", "publication", "journal", "conference",
-        
-        # Mathematical and technical details
-        "mathematical", "formula", "equation", "proof", "theorem", "algorithm",
-        "implementation details", "architecture", "model", "framework",
-        "performance", "benchmark", "comparison", "evaluation metrics",
-        
-        # Research domains
-        "computer vision", "nlp", "natural language processing", "robotics",
-        "reinforcement learning", "supervised learning", "unsupervised learning",
-        "optimization", "statistics", "probability", "linear algebra",
-        
-        # Explicit database mentions
-        "ragas", "primary", "main", "general", "overview", "comprehensive"
-    ]
-    
-    # Check for explicit database mentions first
-    if any(keyword in query_lower for keyword in ["ragas1", "database1", "index1"]):
-        return "ragas1"
-    elif any(keyword in query_lower for keyword in ["ragas", "primary", "main"]):
+        # Validate response
+        if database_choice in ["RAGAS", "RAGAS1"]:
+            logger.info(f"LLM selected database: {database_choice.lower()} for query: {query}")
+            return database_choice.lower()
+        else:
+            logger.warning(f"Invalid LLM response: {database_choice}, defaulting to ragas")
+            return "ragas"
+            
+    except Exception as e:
+        logger.error(f"LLM classification failed: {e}, defaulting to ragas")
         return "ragas"
-    
-    # Count keyword matches for each database
-    ragas1_score = sum(1 for keyword in ragas1_keywords if keyword in query_lower)
-    ragas_score = sum(1 for keyword in ragas_keywords if keyword in query_lower)
-    
-    # If there's a clear preference, use it
-    if ragas1_score > ragas_score:
-        return "ragas1"
-    elif ragas_score > ragas1_score:
-        return "ragas"
-    
-    # Default to ragas (primary database) for general queries
-    return "ragas"
 
 def arxiv_search(query: str) -> dict:
     """
