@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# coding: utf-8
+
 import streamlit as st
 import time
 from dotenv import load_dotenv
@@ -9,6 +12,7 @@ from langchain_anthropic import ChatAnthropic
 from pinecone import Pinecone
 import logging
 from datetime import datetime
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -176,10 +180,49 @@ def search_databases(query: str) -> dict:
                 
                 # Only include high-quality matches
                 if score > 0.7:  # Threshold for relevance
-                    result_text = f"[Score: {score:.2f}] {title} by {authors} ({date})\n{match['metadata']['text']}"
+                    # Clean the text content to remove paper headers and formatting
+                    raw_text = match["metadata"]["text"]
+                    
+                    # Remove common paper section headers more aggressively
+                    cleaned_text = raw_text
+                    headers_to_remove = [
+                        "Abstract", "ABSTRACT", "Introduction", "INTRODUCTION",
+                        "Abstract:", "ABSTRACT:", "Introduction:", "INTRODUCTION:",
+                        "1. Introduction", "1. INTRODUCTION", "1 Introduction", "1 INTRODUCTION",
+                        "2. Related Work", "2. RELATED WORK", "2 Related Work", "2 RELATED WORK",
+                        "3. Methodology", "3. METHODOLOGY", "3 Methodology", "3 METHODOLOGY",
+                        "4. Results", "4. RESULTS", "4 Results", "4 RESULTS",
+                        "5. Conclusion", "5. CONCLUSION", "5 Conclusion", "5 CONCLUSION",
+                        "Abstract\n", "ABSTRACT\n", "Introduction\n", "INTRODUCTION\n",
+                        "Abstract:\n", "ABSTRACT:\n", "Introduction:\n", "INTRODUCTION:\n"
+                    ]
+                    
+                    # More aggressive cleaning - remove headers and everything before them
+                    for header in headers_to_remove:
+                        if header in cleaned_text:
+                            # Split and take everything after the header
+                            parts = cleaned_text.split(header, 1)
+                            if len(parts) > 1:
+                                cleaned_text = parts[1].strip()
+                    
+                    # Remove any remaining section numbers and headers
+                    # Remove lines that are just section headers (like "1. Introduction")
+                    cleaned_text = re.sub(r'^\d+\.\s*[A-Z][a-z\s]+$', '', cleaned_text, flags=re.MULTILINE)
+                    # Remove bold headers (like **Abstract**)
+                    cleaned_text = re.sub(r'\*\*[A-Za-z\s]+\*\*', '', cleaned_text)
+                    # Remove standalone headers
+                    cleaned_text = re.sub(r'^[A-Z][A-Z\s]+$', '', cleaned_text, flags=re.MULTILINE)
+                    
+                    # Clean up extra whitespace and formatting
+                    cleaned_text = " ".join(cleaned_text.split())  # Normalize whitespace
+                    
+                    # Limit excerpt length for display
+                    display_text = cleaned_text[:500] + "..." if len(cleaned_text) > 500 else cleaned_text
+                    
+                    result_text = f"[Score: {score:.2f}] {title} by {authors} ({date})\n{display_text}"
                     results.append(result_text)
                     
-                    # Add source information
+                    # Add source information (keep original text for excerpt)
                     source_info = {
                         "title": title,
                         "authors": authors,
@@ -481,9 +524,11 @@ try:
         }
         | prompt.partial(
             tools=convert_tools(tools),
-            system_message="When answering questions about AI, ML, research, or technical topics, "
-                          "PLEASE DO IT BY USING the search tools to get the most accurate and current information. "
-                          "You can still use your knowledge for basic definitions or general concepts."
+            system_message="CRITICAL: For ANY question about AI, ML, research, technical topics, or current developments, you MUST use the search tools to get accurate and current information. "
+                          "NEVER rely on your own knowledge for these topics. "
+                          "ALWAYS use search_databases for general questions, summarize_papers for summaries/literature reviews, or analyze_trends for trends/developments. "
+                          "Only use your knowledge for basic definitions that don't require current information. "
+                          "This is a research assistant - your primary job is to search databases and provide sourced information."
         )
         | llm.bind(stop=["</tool_input>", "</final_answer>"])
         | XMLAgentOutputParser()
@@ -575,7 +620,7 @@ def enhance_query(query: str, query_type: str | None = None) -> str:
 
 def chat(query: str) -> str:
     """
-    Enhanced chat function with cost-efficient memory management, follow-up question handling, and query enhancement.
+    Enhanced chat function that USES database usage for AI/ML questions.
     
     Args:
         query (str): The user's question
@@ -598,100 +643,79 @@ def chat(query: str) -> str:
         query_type = classify_query_type(query)
         enhanced_query = enhance_query(query, query_type)
         
-        # Add a small delay to prevent rate limiting
-        time.sleep(1)
+        # FORCE DATABASE SEARCH for all AI/ML questions
+        logger.info("Forcing database search for AI/ML question")
+        search_result = search_databases(query)
         
-        # Extract context from recent conversation (last 3 exchanges for cost efficiency)
-        recent_exchanges = chat_history[-3:] if len(chat_history) >= 3 else chat_history
-        recent_context = ""
-        
-        if recent_exchanges:
-            # Format recent context more efficiently
-            context_parts = []
-            for exchange in recent_exchanges:
-                context_parts.append(f"Human: {exchange['human']}")
-                context_parts.append(f"Assistant: {exchange['assistant']}")
-            recent_context = " ".join(context_parts)
-        
-        # Execute the agent with enhanced query and context
+        # Execute the agent with enhanced query for additional context
         out = agent_executor.invoke({
             "input": enhanced_query,
-            "chat_history": recent_context
+            "chat_history": ""
         })
         
-        answer = out.get("output", "I apologize, but I couldn't generate a response for your query.")
+        agent_answer = out.get("output", "")
         
-        # Try to get sources from the search results
-        sources_section = ""
-        try:
-            # If the agent used search_databases, we can extract sources from the stored result
-            if "intermediate_steps" in out:
-                logger.info(f"Found {len(out['intermediate_steps'])} intermediate steps")
-                for step in out["intermediate_steps"]:
-                    logger.info(f"Step tool: {step[0].tool}")
-                    if step[0].tool == "search_databases":
-                        logger.info(f"Found search_databases step with input: {step[0].tool_input}")
-                        # Use the stored search result instead of re-running the search
-                        if last_search_result and last_search_result["sources"]:
-                            logger.info(f"Found {len(last_search_result['sources'])} sources from database: {last_search_result['database_used']}")
+        # ALWAYS use database results as primary response
+        if search_result["paper_count"] > 0:
+            logger.info(f"Using database results: {search_result['paper_count']} sources found")
+            
+            # Create a comprehensive response using database content
+            database_content = search_result["content"]
+            
+            # If agent provided additional context, combine it
+            if agent_answer and len(agent_answer) > 50:  # Only use if agent gave substantial answer
+                combined_response = f"{agent_answer}\n\n**Based on database search:**\n{database_content}"
+            else:
+                # Use database content as primary response
+                combined_response = f"**Based on database search:**\n{database_content}"
+            
+            # Always add sources
+            sources_section = format_sources(search_result["sources"])
+            full_response = combined_response + sources_section
+            
+            logger.info(f"Database response created with {len(search_result['sources'])} sources")
+            
+        else:
+            # No database results found
+            logger.warning("No database results found, using agent response")
+            full_response = agent_answer
+            
+            # Try to get sources from agent's tool usage as fallback
+            sources_section = ""
+            try:
+                if "intermediate_steps" in out:
+                    for step in out["intermediate_steps"]:
+                        if step[0].tool == "search_databases" and last_search_result and last_search_result["sources"]:
                             sources_section = format_sources(last_search_result["sources"])
                             break
-                        else:
-                            logger.warning("No sources found in stored search result")
-            else:
-                logger.info("No intermediate steps found")
-                
-            # If no sources found from agent steps, try direct search
-            if not sources_section:
-                logger.info("Trying direct search for sources")
-                direct_search = search_databases(query)
-                if direct_search["sources"]:
-                    logger.info(f"Direct search found {len(direct_search['sources'])} sources from database: {direct_search['database_used']}")
-                    sources_section = format_sources(direct_search["sources"])
-                
-        except Exception as e:
-            logger.warning(f"Could not extract sources: {e}")
-            # Try direct search as fallback
-            try:
-                direct_search = search_databases(query)
-                if direct_search["sources"]:
-                    logger.info(f"Fallback search found {len(direct_search['sources'])} sources from database: {direct_search['database_used']}")
-                    sources_section = format_sources(direct_search["sources"])
-            except Exception as fallback_error:
-                logger.error(f"Fallback search also failed: {fallback_error}")
-        
-        # Combine answer with sources
-        full_response = answer
-        if sources_section:
-            full_response += sources_section
-            logger.info("Sources added to response")
-        else:
-            logger.warning("No sources found for this query")
+            except Exception as e:
+                logger.warning(f"Could not extract sources from agent: {e}")
+            
+            if sources_section:
+                full_response += sources_section
         
         # Cache the response
         response_cache[cache_key] = full_response
         
         # Improved cache management
         if len(response_cache) > MAX_CACHE_SIZE:
-            # Remove oldest entries more efficiently
             oldest_keys = list(response_cache.keys())[:CACHE_CLEANUP_SIZE]
             for key in oldest_keys:
                 del response_cache[key]
         
-        # Update chat history with structured data (more memory efficient)
+        # Update chat history
         exchange = {
             "human": query,
-            "assistant": answer,  # Store without sources in history
+            "assistant": agent_answer,  # Store agent response without sources
             "timestamp": datetime.now(),
-            "query_type": query_type  # Store query type for analysis
+            "query_type": query_type
         }
         chat_history.append(exchange)
         
-        # Limit history size to 3 exchanges for cost efficiency
         if len(chat_history) > MAX_HISTORY_EXCHANGES:
             chat_history = chat_history[-MAX_HISTORY_EXCHANGES:]
         
-        logger.info(f"Query processed successfully. Type: {query_type}, History size: {len(chat_history)}, Cache size: {len(response_cache)}")
+        logger.info(f"Query processed successfully. Type: {query_type}, Database sources: {search_result['paper_count']}")
         return full_response
         
     except Exception as e:
@@ -772,5 +796,4 @@ def test_source_extraction():
     else:
         logger.error("No sources found in test search")
         return False
-
 
