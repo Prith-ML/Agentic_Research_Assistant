@@ -25,9 +25,18 @@ EMBEDDING_CONFIG = {
 
 # Pinecone Configuration
 PINECONE_CONFIG = {
-    "index_name": "ragas",  # Replace with your actual index name
-    "top_k": 5,
-    "include_metadata": True
+    "database1": {
+        "index_name": "database1",  # arXiv research papers
+        "description": "Academic research papers from arXiv",
+        "top_k": 5,
+        "include_metadata": True
+    },
+    "database2": {
+        "index_name": "database2",  # AI Tech articles
+        "description": "AI technology articles and industry content",
+        "top_k": 5,
+        "include_metadata": True
+    }
 }
 
 # UI Configuration
