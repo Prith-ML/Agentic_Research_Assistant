@@ -407,7 +407,16 @@ try:
             "chat_history": lambda x: x.get("chat_history", ""),
             "agent_scratchpad": lambda x: convert_intermediate_steps(x.get("intermediate_steps", [])),
         }
-        | prompt.partial(tools=convert_tools(tools))
+        | prompt.partial(
+            tools=convert_tools(tools),
+            system_message="CRITICAL INSTRUCTIONS: You are a research assistant that MUST ALWAYS use the search tools to answer questions. "
+                          "You are NOT allowed to answer questions using only your pre-trained knowledge. "
+                          "For EVERY question, you MUST use search_databases, summarize_papers, or analyze_trends to get current information. "
+                          "Only use your knowledge for basic definitions that are universally accepted and don't change. "
+                          "For any specific information, company details, research findings, or current developments, you MUST search the database first. "
+                          "If you cannot find relevant information in the database, clearly state this limitation rather than making up information. "
+                          "Your primary job is to search databases and provide sourced, current information."
+        )
         | llm.bind(stop=["</tool_input>", "</final_answer>"])
         | XMLAgentOutputParser()
     )
@@ -498,7 +507,8 @@ def enhance_query(query: str, query_type: str | None = None) -> str:
 
 def chat(query: str) -> str:
     """
-    Enhanced chat function with agentic database selection and cost-efficient memory management.
+    Enhanced chat function that ALWAYS uses database search and provides sources.
+    No fallback to LLM knowledge only.
     
     Args:
         query (str): The user's question
@@ -517,12 +527,9 @@ def chat(query: str) -> str:
             logger.info("Returning cached response")
             return response_cache[cache_key]
         
-        # Enhance the query for better results
-        query_type = classify_query_type(query)
-        enhanced_query = enhance_query(query, query_type)
-        
-        # Add a small delay to prevent rate limiting
-        time.sleep(1)
+        # ALWAYS search the database first - this is mandatory
+        logger.info("Searching database for sources (mandatory)")
+        search_result = search_databases(query)
         
         # Extract context from recent conversation (last 3 exchanges for cost efficiency)
         recent_exchanges = chat_history[-3:] if len(chat_history) >= 3 else chat_history
@@ -536,60 +543,55 @@ def chat(query: str) -> str:
                 context_parts.append(f"Assistant: {exchange['assistant']}")
             recent_context = " ".join(context_parts)
         
-        # Execute the agent with enhanced query and context
-        out = agent_executor.invoke({
-            "input": enhanced_query,
-            "chat_history": recent_context
-        })
+        # ALWAYS use search results to inform the response
+        search_content = search_result["content"]
+        database_used = search_result["database_used"]
         
-        answer = out.get("output", "I apologize, but I couldn't generate a response for your query.")
-        
-        # Try to get sources from the search results
-        sources_section = ""
-        try:
-            # If the agent used search_databases, we can extract sources
-            if "intermediate_steps" in out:
-                logger.info(f"Found {len(out['intermediate_steps'])} intermediate steps")
-                for step in out["intermediate_steps"]:
-                    logger.info(f"Step tool: {step[0].tool}")
-                    if step[0].tool == "search_databases":
-                        logger.info(f"Found search_databases step with input: {step[0].tool_input}")
-                        # Extract sources from the search
-                        search_result = search_databases(step[0].tool_input)
-                        if search_result["sources"]:
-                            logger.info(f"Found {len(search_result['sources'])} sources")
-                            sources_section = format_sources(search_result["sources"])
-                            break
-                        else:
-                            logger.warning("No sources found in search result")
-            else:
-                logger.info("No intermediate steps found")
-                
-            # If no sources found from agent steps, try direct search
-            if not sources_section:
-                logger.info("Trying direct search for sources")
-                direct_search = search_databases(query)
-                if direct_search["sources"]:
-                    logger.info(f"Direct search found {len(direct_search['sources'])} sources")
-                    sources_section = format_sources(direct_search["sources"])
-                
-        except Exception as e:
-            logger.warning(f"Could not extract sources: {e}")
-            # Try direct search as fallback
-            try:
-                direct_search = search_databases(query)
-                if direct_search["sources"]:
-                    sources_section = format_sources(direct_search["sources"])
-            except Exception as fallback_error:
-                logger.error(f"Fallback search also failed: {fallback_error}")
+        if search_result["sources"]:
+            # We have sources - create a comprehensive response
+            enhanced_prompt = f"""
+            You are a research assistant. You MUST answer based ONLY on the provided search results from {database_used}.
+            
+            Question: {query}
+            
+            Search Results from {database_used}:
+            {search_content}
+            
+            Recent conversation context: {recent_context}
+            
+            Instructions:
+            1. Answer the question using ONLY information from the search results
+            2. Cite specific details from the sources provided
+            3. If the search results don't fully answer the question, say so clearly
+            4. Do NOT use any external knowledge - only use the search results
+            5. Be specific and reference the sources in your answer
+            
+            Provide a comprehensive answer that directly references the search results.
+            """
+            
+            # Get response from LLM
+            response = llm.invoke(enhanced_prompt)
+            answer = response.content
+            
+            # Format sources
+            sources_section = format_sources(search_result["sources"])
+            logger.info(f"Added {len(search_result['sources'])} sources to response")
+            
+        else:
+            # No sources found - provide a clear message about the limitation
+            answer = f"I searched the {database_used} database for information about '{query}', but I couldn't find any relevant sources that meet the relevance threshold. This could mean:\n\n"
+            answer += "1. The topic might not be covered in our current database\n"
+            answer += "2. The search terms might need to be rephrased\n"
+            answer += "3. The information might be in the other database\n\n"
+            answer += "Please try rephrasing your question or ask about a different aspect of the topic."
+            
+            sources_section = ""
+            logger.warning(f"No sources found in {database_used} database for query: {query}")
         
         # Combine answer with sources
         full_response = answer
         if sources_section:
             full_response += sources_section
-            logger.info("Sources added to response")
-        else:
-            logger.warning("No sources found for this query")
         
         # Cache the response
         response_cache[cache_key] = full_response
@@ -606,7 +608,8 @@ def chat(query: str) -> str:
             "human": query,
             "assistant": answer,  # Store without sources in history
             "timestamp": datetime.now(),
-            "query_type": query_type  # Store query type for analysis
+            "sources_count": len(search_result["sources"]),
+            "database_used": database_used
         }
         chat_history.append(exchange)
         
@@ -614,12 +617,12 @@ def chat(query: str) -> str:
         if len(chat_history) > MAX_HISTORY_EXCHANGES:
             chat_history = chat_history[-MAX_HISTORY_EXCHANGES:]
         
-        logger.info(f"Query processed successfully. Type: {query_type}, History size: {len(chat_history)}, Cache size: {len(response_cache)}")
+        logger.info(f"Query processed successfully. Sources: {len(search_result['sources'])}, Database: {database_used}, History size: {len(chat_history)}, Cache size: {len(response_cache)}")
         return full_response
         
     except Exception as e:
         logger.error(f"Error in chat function: {e}")
-        error_message = f"I apologize, but I encountered an error while processing your query: {str(e)}"
+        error_message = f"I apologize, but I encountered an error while searching the database for your query: {str(e)}"
         return error_message
 
 def clear_cache():
