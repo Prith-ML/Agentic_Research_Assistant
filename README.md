@@ -18,7 +18,5 @@ Totals & Duration: Tracks your message count, questions sent, agent responses, a
 # Agentic Workflow
 
 - Dynamic Routing: LLM classifies each query as academic, industry, or both, then hits the appropriate Pinecone index.
-
 - Transparent Retrieval: Retrieved snippets feed into a summary that always ends with a numbered Sources & References list (title, score, excerpt).
-
 - Proactive Suggestions: After each answer, you get 2–3 follow-up questions and 2–3 research-direction prompts to keep exploring.
