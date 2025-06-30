@@ -20,3 +20,5 @@ Totals & Duration: Tracks your message count, questions sent, agent responses, a
 - Dynamic Routing: LLM classifies each query as academic, industry, or both, then hits the appropriate Pinecone index.
 - Transparent Retrieval: Retrieved snippets feed into a summary that always ends with a numbered Sources & References list (title, score, excerpt).
 - Proactive Suggestions: After each answer, you get 2–3 follow-up questions and 2–3 research-direction prompts to keep exploring.
+
+The Agentic Research Assistant is a unified research platform that combines the depth of academic literature with the practicality of industry reporting. By maintaining two dedicated Pinecone indices—one populated with vectorized arXiv papers and the other with curated AI-tech articles, blogs, and whitepapers—it delivers balanced insights drawn from both rigorous scholarship and real-world applications.
