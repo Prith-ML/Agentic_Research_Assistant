@@ -9,22 +9,16 @@ Try out the Agentic Research Assistant live on Streamlit:
 
 Totals & Duration: Tracks your message count, questions sent, agent responses, and elapsed time to gauge session activity.
 
-Search Controls#
+# Search Controls / Display Toggles 
 
-Sources Slider: Sets how many top‐K documents the agent retrieves (1–10).
+- Sources Slider: Sets how many top‐K documents the agent retrieves (1–10).
+- Creativity Slider: Adjusts the LLM’s temperature for more “by-the-book” vs. more exploratory summaries.
+- Timestamps & Auto-Scroll: Show message times and keep the latest reply in view.
 
-Creativity Slider: Adjusts the LLM’s temperature for more “by-the-book” vs. more exploratory summaries.
+# Agentic Workflow
 
-Display Toggles
+- Dynamic Routing: LLM classifies each query as academic, industry, or both, then hits the appropriate Pinecone index.
 
-Timestamps & Auto-Scroll: Show message times and keep the latest reply in view.
+- Transparent Retrieval: Retrieved snippets feed into a summary that always ends with a numbered Sources & References list (title, score, excerpt).
 
-Database Info: When on, you’ll see “Searching database1/2/both” badges revealing the agent’s source choice.
-
-Agentic Workflow
-
-Dynamic Routing: LLM classifies each query as academic, industry, or both, then hits the appropriate Pinecone index.
-
-Transparent Retrieval: Retrieved snippets feed into a summary that always ends with a numbered Sources & References list (title, score, excerpt).
-
-Proactive Suggestions: After each answer, you get 2–3 follow-up questions and 2–3 research-direction prompts to keep exploring.
+- Proactive Suggestions: After each answer, you get 2–3 follow-up questions and 2–3 research-direction prompts to keep exploring.
