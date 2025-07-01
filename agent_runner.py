@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
 import streamlit as st
 import time
 from dotenv import load_dotenv
@@ -20,7 +17,7 @@ from dataclasses import dataclass
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables (for local development)
+# Load environment variables 
 try:
     load_dotenv()
 except:
